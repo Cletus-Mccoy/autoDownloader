@@ -15,6 +15,7 @@ import os
 import sys
 import json
 import subprocess
+import time
 from pathlib import Path
 
 try:
@@ -25,11 +26,10 @@ except ImportError:
     print("⚠ ytmusicapi not installed. Install with: pip install ytmusicapi")
 
 # Configuration
-BASE_DIR = r"C:\Users\kaspe\Desktop\MUSIC\TEST_2"
-BROWSER = "firefox"  # Options: chrome, firefox, edge, opera, brave
+BASE_DIR = r"C:\Users\kaspe\Desktop\MUSIC\TEST_1"
 AUDIO_FORMAT = "mp3"
 AUTH_FILE = "oauth.json"  # Try OAuth first, then browser.json
-BROWSER_AUTH_FILE = "browser.json"  # Fallback auth file
+BROWSER_AUTH_FILE = "browser.json"  # Browser headers auth file
 
 
 def setup_ytmusicapi():
@@ -130,62 +130,6 @@ def create_cookies_file():
     except Exception as e:
         print(f"Error creating cookies file: {e}")
         return None
-    """Fallback: Get playlists using browser cookies with yt-dlp"""
-    print("\n" + "="*60)
-    print("Discovering playlists using browser cookies...")
-    print("="*60)
-    
-    # First, let's try to get the user's "Liked Music" and work from there
-    cmd = [
-        "yt-dlp",
-        "--flat-playlist",
-        "--dump-single-json",
-        "--cookies-from-browser", browser,
-        "https://music.youtube.com/library/playlists"
-    ]
-    
-    try:
-        print(f"\nExtracting cookies from {browser}...")
-        print("(Make sure you're logged into YouTube Music in your browser)")
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        
-        if "ERROR" in result.stderr and "cookie" in result.stderr.lower():
-            print(f"\n⚠ Cookie extraction failed")
-            print(f"Try: 1) Closing {browser} completely")
-            print("     2) Using a different browser (edit BROWSER in script)")
-            return None
-        
-        if result.returncode != 0:
-            print("\nCouldn't access library playlists")
-            return None
-        
-        data = json.loads(result.stdout)
-        playlists = []
-        
-        if 'entries' in data:
-            for entry in data['entries']:
-                if entry:
-                    playlist_id = entry.get('id', '')
-                    if playlist_id:
-                        playlists.append({
-                            'title': entry.get('title', f'Playlist {playlist_id}'),
-                            'url': f"https://music.youtube.com/playlist?list={playlist_id}",
-                            'count': entry.get('playlist_count', 'Unknown'),
-                            'id': playlist_id
-                        })
-        
-        return playlists if playlists else None
-        
-    except subprocess.TimeoutExpired:
-        print("Timeout - browser might be locked")
-        return None
-    except json.JSONDecodeError:
-        print("Could not parse playlist data")
-        return None
-    except Exception as e:
-        print(f"Error: {e}")
-        return None
 
 
 def get_manual_playlists():
@@ -197,8 +141,8 @@ def get_manual_playlists():
     return []
 
 
-def download_playlist(playlist_info, browser=BROWSER, use_cookies_file=False, cookies_file=None):
-    """Download a single playlist"""
+def download_playlist(playlist_info):
+    """Download a single playlist using browser.json authentication"""
     title = playlist_info['title']
     url = playlist_info['url']
     count = playlist_info.get('count', 'Unknown')
@@ -224,7 +168,29 @@ def download_playlist(playlist_info, browser=BROWSER, use_cookies_file=False, co
     print(f"Saving to: {safe_name}/")
     print("="*60)
     
-    # Build command - Use simple approach with explicit JS runtime options
+    # Create cookies.txt from browser.json if it exists
+    cookies_file = create_cookies_file()
+    
+    # Detect Node.js path for JS runtime
+    node_paths = [
+        r"C:\Program Files\nodejs\node.exe",
+        r"C:\Program Files (x86)\nodejs\node.exe",
+        "node"  # If in PATH
+    ]
+    
+    node_exe = None
+    for path in node_paths:
+        try:
+            if path == "node":
+                subprocess.run(["node", "--version"], capture_output=True, check=True)
+                node_exe = "node"
+            elif os.path.exists(path):
+                node_exe = path
+                break
+        except:
+            continue
+    
+    # Build command using cookies file from browser.json
     cmd = [
         "yt-dlp",
         "-x", "--extract-audio",
@@ -237,40 +203,48 @@ def download_playlist(playlist_info, browser=BROWSER, use_cookies_file=False, co
         "--yes-playlist",
         "--ignore-errors",
         "--no-abort-on-error",
-        "--js-runtimes", "node:C:\\Program Files\\nodejs\\node.exe",  # Explicit JS runtime
-        "--extractor-args", "youtube:player_client=ios,android,web",  # Use mobile clients to avoid SABR
-        "--no-warnings",  # Suppress SABR and other non-critical warnings
+        "--extractor-args", "youtube:player_client=web,web_creator",
+        "--no-warnings"
     ]
     
-    # Add authentication using cookies file
-    cookies_file_path = create_cookies_file()
-    if cookies_file_path:
-        cmd.extend(["--cookies", cookies_file_path])
-        print("Using cookies file for authentication")
+    # Add JavaScript runtime if Node.js is available
+    if node_exe:
+        cmd.extend(["--js-runtimes", f"node:{node_exe}"])
+        print(f"Using Node.js runtime: {node_exe}")
     else:
-        # Fallback to browser cookies
-        cmd.extend(["--cookies-from-browser", browser])
-        print(f"Extracting cookies from {browser}")
+        print("⚠ Node.js not found - may have issues with some videos")
+    
+    # Add cookies if available
+    if cookies_file and os.path.exists(cookies_file):
+        cmd.extend(["--cookies", cookies_file])
+        print("Using authentication from browser.json")
+    else:
+        print("⚠ No authentication - may have limited access")
     
     try:
+        print(f"\nStarting download for {title}...")
         subprocess.run(cmd, check=False)
-        print(f"\n✓ Completed: {title}")
+        
+        # Check results
+        audio_files = list(Path(playlist_dir).glob("*.mp3"))
+        if len(audio_files) > 0:
+            print(f"\n✓ Completed: {title} ({len(audio_files)} files)")
+        else:
+            print(f"\n⚠ No files downloaded for: {title}")
+            print("This playlist may be empty, private, or all tracks were already downloaded")
         
         # Clean up cookies file
-        if cookies_file_path and os.path.exists(cookies_file_path):
-            os.remove(cookies_file_path)
+        if cookies_file and os.path.exists(cookies_file):
+            try:
+                os.remove(cookies_file)
+            except:
+                pass
         
         return True
     except KeyboardInterrupt:
-        # Clean up cookies file on interrupt
-        if cookies_file_path and os.path.exists(cookies_file_path):
-            os.remove(cookies_file_path)
         raise
     except Exception as e:
         print(f"\n✗ Error: {e}")
-        # Clean up cookies file
-        if cookies_file_path and os.path.exists(cookies_file_path):
-            os.remove(cookies_file_path)
         return False
 
 
@@ -291,64 +265,39 @@ def main():
     # Configuration
     print(f"\n📁 Download location: {BASE_DIR}")
     print(f"🎵 Audio format: {AUDIO_FORMAT}")
-    print(f"🌐 Browser: {BROWSER}")
+    print(f"🌐 Authentication: Firefox Headers (browser.json)")
     
-    # Get playlists using best available method
+    # Get playlists using ytmusicapi with browser headers
     playlists = None
     
-    # Method 1: Try ytmusicapi with browser headers
+    # Only method: ytmusicapi with browser headers
     if YTMUSIC_AVAILABLE and os.path.exists(BROWSER_AUTH_FILE):
-        print("\n🔍 Method: ytmusicapi (Browser Headers)")
+        print("\n🔍 Method: ytmusicapi (Firefox Browser Headers)")
         playlists = get_playlists_ytmusicapi()
-    
-    # Method 2: Manual fallback if API fails
-    if not playlists:
-        print("\n🔍 Method: Manual playlist input")
-        print("\nAutomatic discovery failed. Please provide YouTube Music playlist URLs manually.")
-        print("\nYou can:")
-        print("1. Copy playlist URLs from YouTube Music")
-        print("2. Paste them when prompted")
-        print("3. The script will download them using yt-dlp")
+    else:
+        print("\n❌ browser.json not found!")
+        print("\nTo set up authentication:")
+        print("1. Run: ytmusicapi browser")
+        print("2. Open Firefox and go to YouTube Music")
+        print("3. Open Developer Tools (F12) -> Network tab")
+        print("4. Filter by 'browse' and find a POST request")
+        print("5. Copy request headers and paste when prompted")
+        print("6. Run this script again")
         
-        # Manual playlist input
-        playlists = []
-        print("\n" + "="*60)
-        print("Manual Playlist Input")
-        print("="*60)
+        choice = input("\nRun ytmusicapi setup now? (y/n): ").strip().lower()
+        if choice == 'y':
+            print("\nRunning ytmusicapi browser setup...")
+            try:
+                subprocess.run(["ytmusicapi", "browser"], check=True)
+                print("\n✓ Setup complete! Please run this script again.")
+            except Exception as e:
+                print(f"\n❌ Setup failed: {e}")
         
-        while True:
-            url = input("\nEnter YouTube Music playlist URL (or press Enter to finish): ").strip()
-            if not url:
-                break
-            
-            if "music.youtube.com/playlist" in url or "youtube.com/playlist" in url:
-                # Extract playlist name from URL or ask for it
-                playlist_name = input(f"Enter name for this playlist (or press Enter for auto-name): ").strip()
-                if not playlist_name:
-                    # Try to extract ID from URL for auto-naming
-                    if "list=" in url:
-                        playlist_id = url.split("list=")[1].split("&")[0]
-                        playlist_name = f"Playlist_{playlist_id[:8]}"
-                    else:
-                        playlist_name = f"Playlist_{len(playlists)+1}"
-                
-                playlists.append({
-                    'title': playlist_name,
-                    'url': url,
-                    'count': '?',
-                    'id': url.split("list=")[1].split("&")[0] if "list=" in url else 'unknown'
-                })
-                print(f"✓ Added: {playlist_name}")
-            else:
-                print("⚠ Invalid URL. Please enter a valid YouTube Music playlist URL.")
+        sys.exit(1)
     
+    # Ensure we have playlists (this should not happen with proper setup)
     if not playlists:
-        print("\n✗ No playlists provided!")
-        print("\nTo find playlist URLs:")
-        print("  1. Go to YouTube Music in your browser")
-        print("  2. Navigate to a playlist")
-        print("  3. Copy the URL from the address bar")
-        print("  4. Run this script again")
+        print("\n❌ No playlists found!")
         sys.exit(1)
     
     # Display playlists
@@ -377,13 +326,25 @@ def main():
     for i, playlist in enumerate(playlists, 1):
         print(f"\n📦 [{i}/{len(playlists)}]")
         try:
-            if download_playlist(playlist, BROWSER):
+            if download_playlist(playlist):
                 successful += 1
             else:
                 failed += 1
         except KeyboardInterrupt:
             print("\n\n⚠ Cancelled by user")
             break
+        except Exception as e:
+            print(f"\n✗ Unexpected error: {e}")
+            failed += 1
+        
+        # Add break between playlists to avoid rate limiting
+        if i < len(playlists):  # Don't sleep after the last playlist
+            print(f"\n💤 Taking a 10-second break...")
+            try:
+                time.sleep(10)
+            except KeyboardInterrupt:
+                print("\n⚠ Cancelled by user")
+                break
     
     # Summary
     print("\n" + "="*60)

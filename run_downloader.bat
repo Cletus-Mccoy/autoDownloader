@@ -10,7 +10,21 @@ echo ============================================================
 echo.
 
 REM Add Node.js to PATH for yt-dlp JavaScript runtime support
-set "PATH=C:\Program Files\nodejs;%PATH%"
+set "NODE_PATH=C:\Program Files\nodejs"
+if not exist "%NODE_PATH%\node.exe" (
+    set "NODE_PATH=C:\Program Files (x86)\nodejs"
+)
+if not exist "%NODE_PATH%\node.exe" (
+    set "NODE_PATH=%PROGRAMFILES%\nodejs"
+)
+if not exist "%NODE_PATH%\node.exe" (
+    echo Warning: Node.js not found in standard locations
+    echo yt-dlp may have issues with JavaScript challenges
+    echo Install Node.js from https://nodejs.org/
+) else (
+    echo Node.js found at: %NODE_PATH%
+    set "PATH=%NODE_PATH%;%PATH%"
+)
 
 REM Check if Python is available
 python --version >nul 2>&1
@@ -32,7 +46,18 @@ echo ============================================================
 REM Install required packages with all dependencies for JavaScript solving
 echo Installing ytmusicapi, yt-dlp and JavaScript runtime dependencies...
 pip install -r requirements.txt
-pip install --upgrade yt-dlp[default] yt-dlp-ejs
+pip install --upgrade yt-dlp[default]
+pip install --upgrade yt-dlp-ejs js2py phantomjs-binary
+
+REM Verify yt-dlp installation
+echo.
+echo Verifying yt-dlp installation...
+yt-dlp --version
+if %errorlevel% neq 0 (
+    echo Error: yt-dlp installation failed
+    pause
+    exit /b 1
+)
 
 if %errorlevel% neq 0 (
     echo Error: Failed to install packages
@@ -55,6 +80,12 @@ if exist "browser.json" (
     if /i not "%overwrite%"=="y" (
         goto :skip_auth
     )
+) else (
+    echo No browser authentication found
+    set /p "setup_auth=Do you want to set up authentication? (y/n): "
+    if /i not "%setup_auth%"=="y" (
+        goto :skip_auth
+    )
 )
 
 echo.
@@ -62,15 +93,15 @@ echo Setting up YouTube Music authentication...
 echo.
 echo CRITICAL: Follow these steps exactly (from official ytmusicapi docs):
 echo.
-echo 1. Open YouTube Music: https://music.youtube.com
-echo 2. Make sure you are logged in
+echo 1. Open YouTube Music: https://music.youtube.com IN FIREFOX
+echo 2. Make sure you are logged in to YOUR account
 echo 3. Press F12 (Developer Tools) and select "Network" tab
 echo 4. Filter by "/browse" using the search bar
 echo 5. Scroll down or click "Library" button to trigger a browse request
 echo 6. Find a POST request to music.youtube.com with "browse" in the URL
 echo 7. Verify: Status 200, Method POST, Domain music.youtube.com
 echo 8. Right-click ^> Copy ^> Copy request headers
-echo 9. Paste ALL headers when prompted
+echo 9. Paste ALL headers when prompted (Firefox headers only!)
 echo.
 echo Press any key when you have the correct POST /browse headers ready...
 pause >nul
