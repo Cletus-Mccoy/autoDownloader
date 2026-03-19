@@ -31,6 +31,11 @@ AUDIO_FORMAT = "mp3"
 AUTH_FILE = "oauth.json"  # Try OAuth first, then browser.json
 BROWSER_AUTH_FILE = "browser.json"  # Browser headers auth file
 
+# Traktor-compatible audio settings
+AUDIO_QUALITY = "320"  # 320kbps CBR for best Traktor compatibility
+AUDIO_CODEC = "mp3"    # Force MP3 codec
+NORMALIZE_AUDIO = True  # Normalize audio levels
+
 
 def setup_ytmusicapi():
     """Guide user through ytmusicapi setup"""
@@ -97,7 +102,6 @@ def get_playlists_ytmusicapi():
         print(f"Error with ytmusicapi: {e}")
         return None
 
-
 def create_cookies_file():
     """Create a Netscape cookie file from browser.json"""
     if not os.path.exists(BROWSER_AUTH_FILE):
@@ -153,9 +157,14 @@ def download_playlist(playlist_info):
         print(f"\n⚠ Skipping {title} (not supported by yt-dlp)")
         return True
     
-    # Sanitize folder name
+    # Sanitize folder name for Traktor compatibility
+    # Remove problematic characters that can cause issues in DJ software
     safe_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in title)
     safe_name = safe_name.strip().replace(' ', '_')
+    # Remove multiple consecutive underscores
+    while '__' in safe_name:
+        safe_name = safe_name.replace('__', '_')
+    safe_name = safe_name.strip('_')
     
     playlist_dir = os.path.join(BASE_DIR, safe_name)
     archive_file = os.path.join(playlist_dir, 'downloaded.txt')
@@ -190,13 +199,14 @@ def download_playlist(playlist_info):
         except:
             continue
     
-    # Build command using cookies file from browser.json
+    # Build command with Traktor-compatible settings
     cmd = [
         "yt-dlp",
         "-x", "--extract-audio",
         "--audio-format", AUDIO_FORMAT,
+        "--audio-quality", AUDIO_QUALITY,  # 320kbps for best quality
         "--download-archive", archive_file,
-        "--output", f"{playlist_dir}/%(title)s.%(ext)s",
+        "--output", f"{playlist_dir}/%(artist)s - %(title)s.%(ext)s",  # Better naming for DJ software
         url,
         "--embed-thumbnail",
         "--embed-metadata",
@@ -204,7 +214,11 @@ def download_playlist(playlist_info):
         "--ignore-errors",
         "--no-abort-on-error",
         "--extractor-args", "youtube:player_client=web,web_creator",
-        "--no-warnings"
+        "--no-warnings",
+        # Traktor-specific improvements
+        "--audio-multistreams",  # Handle multiple audio streams properly
+        "--postprocessor-args", "ffmpeg:-avoid_negative_ts make_zero -c:a libmp3lame -b:a 320k -ac 2 -ar 44100",  # Force proper MP3 encoding
+        "--restrict-filenames",  # Avoid problematic characters in filenames
     ]
     
     # Add JavaScript runtime if Node.js is available
@@ -265,6 +279,7 @@ def main():
     # Configuration
     print(f"\n📁 Download location: {BASE_DIR}")
     print(f"🎵 Audio format: {AUDIO_FORMAT}")
+    print(f"� Audio quality: {AUDIO_QUALITY}kbps CBR (Traktor optimized)")
     print(f"🌐 Authentication: Firefox Headers (browser.json)")
     
     # Get playlists using ytmusicapi with browser headers
@@ -308,12 +323,12 @@ def main():
     for i, pl in enumerate(playlists, 1):
         print(f"{i:2d}. {pl['title']:<40} ({pl.get('count', '?')} tracks)")
     
-    # Confirm
-    print("\n" + "="*60)
-    confirm = input("Start downloading? (y/n): ").strip().lower()
-    if confirm == 'n':
-        print("Cancelled")
-        sys.exit(0)
+    # # Confirm
+    # print("\n" + "="*60)
+    # confirm = input("Start downloading? (y/n): ").strip().lower()
+    # if confirm == 'n':
+    #     print("Cancelled")
+    #     sys.exit(0)
     
     # Download
     print("\n" + "="*60)
