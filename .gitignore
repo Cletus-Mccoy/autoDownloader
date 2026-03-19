@@ -1,46 +1,5 @@
-# Authentication files
-browser.json
+# Log files
+log.txt
+
+# Cookies
 cookies.txt
-oauth.json
-
-# Downloaded music files
-*.mp3
-*.m4a
-*.webm
-*.wav
-*.flac
-
-# Download folders
-*/
-
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-
-# Virtual environment
-venv/
-env/
-.venv/
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS files
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Logs and archives
-*.log
-downloaded.txt
-
-# Temporary files
-temp/
-tmp/
-*.tmp
