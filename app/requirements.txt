@@ -1,0 +1,11 @@
+dotenv
+yt-dlp[default]
+playwright
+flask
+croniter
+pycryptodome
+brotli
+js2py
+phantomjs-binary
+ytmusicapi
+yt-dlp-ejs

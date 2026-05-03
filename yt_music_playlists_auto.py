@@ -17,6 +17,9 @@ import json
 import subprocess
 import time
 from pathlib import Path
+from env import load_dotenv
+
+load_dotenv()
 
 try:
     from ytmusicapi import YTMusic
@@ -29,12 +32,12 @@ except ImportError:
 BASE_DIR = r"C:\Users\kaspe\Desktop\MUSIC\TEST_1"
 AUDIO_FORMAT = "mp3"
 AUTH_FILE = "oauth.json"  # Try OAuth first, then browser.json
-BROWSER_AUTH_FILE = "browser.json"  # Browser headers auth file
+BROWSER_AUTH_FILE = os.getenv("FIREFOX_HEADERS", "browser.json")  # Browser headers auth file
 
 # Traktor-compatible audio settings
-AUDIO_QUALITY = "320"  # 320kbps CBR for best Traktor compatibility
-AUDIO_CODEC = "mp3"    # Force MP3 codec
-NORMALIZE_AUDIO = True  # Normalize audio levels
+AUDIO_QUALITY = os.getenv("YT_DLP_QUALITY", "320")  # 320kbps CBR for best Traktor compatibility
+AUDIO_CODEC = os.getenv("YT_DLP_CODEC", "mp3")    # Force MP3 codec
+NORMALIZE_AUDIO = os.getenv("YT_DLP_NORMALIZE", "false").lower() == "true"  # Normalize audio levels
 
 
 def setup_ytmusicapi():
