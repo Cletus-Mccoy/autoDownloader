@@ -1,0 +1,8 @@
+services:
+  ytmusic:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ../browser.json:/app/data/browser.json:ro

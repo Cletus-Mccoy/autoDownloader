@@ -1,0 +1,15 @@
+<pre id="log"></pre>
+
+<script>
+const es = new EventSource("/run-stream");
+
+es.onmessage = function (event) {
+    if (event.data === "[DONE]") {
+        es.close();
+        return;
+    }
+
+    console.log(event.data);
+    document.getElementById("log").innerText += event.data + "\n";
+};
+</script>

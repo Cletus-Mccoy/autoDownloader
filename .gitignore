@@ -3,3 +3,9 @@ log.txt
 
 # Cookies
 cookies.txt
+
+# Environment variables
+.env
+
+# App data
+app/data/*
