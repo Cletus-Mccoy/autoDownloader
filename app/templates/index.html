@@ -165,14 +165,7 @@
 
                 <!-- Downloads summary -->
                 <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                    <div class="flex items-center justify-between mb-2">
-                        <div class="text-xs font-medium text-gray-500 uppercase tracking-wider">Downloads</div>
-                        <button id="autorefresh-btn" onclick="toggleAutoRefresh()"
-                            title="Auto-refresh downloads"
-                            class="text-xs px-2 py-1 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-400 transition-colors font-mono">
-                            ↻ Auto
-                        </button>
-                    </div>
+                    <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Downloads</div>
                     <div id="download-size" class="text-base font-semibold text-white">
                         {% if download_size %}{{ download_size }}{% else %}&mdash;{% endif %}
                     </div>
@@ -453,30 +446,13 @@
 
     document.getElementById('log-select').addEventListener('change', fetchLog);
 
-    // ── Downloads summary auto-refresh ──────────────────────────────
-    let autoRefreshInterval = null;
-
+    // ── Downloads summary ────────────────────────────────────────────
     async function refreshDownloadSummary() {
         try {
             const data = await fetch('/api/downloads').then(r => r.json());
             document.getElementById('download-size').textContent  = data.size ?? '—';
             document.getElementById('download-count').textContent = `${data.files.length} file(s)`;
         } catch (_) {}
-    }
-
-    function toggleAutoRefresh() {
-        const btn = document.getElementById('autorefresh-btn');
-        if (autoRefreshInterval) {
-            clearInterval(autoRefreshInterval);
-            autoRefreshInterval = null;
-            btn.className   = "text-xs px-2 py-1 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-400 transition-colors font-mono";
-            btn.textContent = "↻ Auto";
-        } else {
-            refreshDownloadSummary();
-            autoRefreshInterval = setInterval(refreshDownloadSummary, 5000);
-            btn.className   = "text-xs px-2 py-1 rounded-md bg-indigo-700 hover:bg-indigo-600 text-white transition-colors font-mono";
-            btn.textContent = "↻ On";
-        }
     }
 
     // ── Paginated track list ─────────────────────────────────────────
