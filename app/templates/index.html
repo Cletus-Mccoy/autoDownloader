@@ -1,150 +1,208 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YT Music Downloader</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <meta http-equiv="refresh" content="30">
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+    </style>
 </head>
 
-<body class="bg-gray-900 text-white p-6">
-
-
+<body class="bg-gray-950 text-gray-100 min-h-screen" style="background-color:#0a0f1a">
 
 <div class="flex min-h-screen">
     <!-- Sidebar -->
-    <aside class="w-64 bg-gray-900 p-6 flex flex-col gap-8 border-r border-gray-800">
+    <aside class="w-60 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col p-5 gap-6">
         <div>
-            <h1 class="text-2xl font-bold tracking-tight mb-2">🎵 YT Music Downloader</h1>
-            <div id="auth-badge" class="mb-2"></div>
+            <div class="flex items-center gap-2 mb-1">
+                <span class="text-xl">🎵</span>
+                <h1 class="text-base font-bold tracking-tight text-white">YT Music Downloader</h1>
+            </div>
+            <p class="text-xs text-gray-500 mb-4">Automated playlist sync</p>
+
+            <div id="auth-badge" class="mb-3"></div>
             <button id="auth-btn" onclick="openAuthModal()"
-                class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded w-full font-semibold text-xs hidden mb-2">
+                class="w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold transition-colors mb-2">
                 🔐 Login
             </button>
-            <form method="post" action="/auth/revoke" id="revoke-form" class="hidden mb-2">
-                <button class="bg-green-600 hover:bg-red-600 hover:text-white px-4 py-2 rounded w-full font-semibold text-xs transition-colors">
-                    ✓ Authenticated (Logout)
+            <form method="post" action="/auth/revoke" id="revoke-form" style="display:none">
+                <button class="w-full px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-xs font-semibold transition-colors">
+                    Logout
                 </button>
             </form>
         </div>
-        <div class="flex flex-col gap-2">
+
+        <div class="border-t border-gray-800 pt-4 flex flex-col gap-2">
+            <div id="download-status-badge" class="text-xs text-gray-500 mb-1 h-4"></div>
             <form id="runstop-form" method="post" action="/run-now">
-                <button id="runstop-btn" type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded w-full font-semibold transition-colors">
+                <button id="runstop-btn" type="submit"
+                    class="w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold transition-colors">
                     ▶ Start
                 </button>
             </form>
             <form method="post" action="/clear-logs">
-                <button class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded w-full font-semibold">
+                <button class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300">
                     🧹 Clear Logs
                 </button>
             </form>
             <form method="post" action="/clear-downloads">
-                <button class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded w-full font-semibold">
+                <button class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300">
                     🧹 Clear Downloads
                 </button>
             </form>
         </div>
-        <div class="mt-8">
-            <div id="download-status-badge" class="text-xs text-gray-400"></div>
-        </div>
     </aside>
 
     <!-- Main Content -->
-    <main class="flex-1 p-10 flex flex-col gap-8">
-        <!-- Next Run Card -->
-        <section class="bg-gray-900 rounded-xl p-6 shadow-lg max-w-xl mb-4">
-            <div class="text-xs text-gray-400 mb-1">Next scheduled run</div>
-            {% if next_run %}
-                <div class="text-lg font-semibold">{{ next_run }}</div>
-            {% else %}
-                <div class="text-red-400">Unknown schedule</div>
-            {% endif %}
-            {% if delta %}
-                <div class="text-xs text-gray-400">In {{ delta }}</div>
-            {% endif %}
-        </section>
+    <main class="flex-1 p-8 flex flex-col gap-6 overflow-auto">
 
-        <!-- Downloads Card -->
-        <section class="bg-gray-900 rounded-xl p-6 shadow-lg max-w-xl mb-4">
-            <h2 class="text-lg font-bold mb-2">Downloads</h2>
-            <div>
-                {% if download_size %}
-                    <span class="text-xs text-gray-400">Total size: {{ download_size }}</span>
+        <!-- Top row: schedule + download summary -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+
+            <!-- Next Run -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Next scheduled run</div>
+                {% if next_run %}
+                    <div class="text-base font-semibold text-white">{{ next_run }}</div>
+                    {% if delta %}
+                        <div class="text-xs text-indigo-400 mt-1">in {{ delta }}</div>
+                    {% endif %}
                 {% else %}
-                    <span class="text-xs text-gray-400">Could not determine folder size</span>
+                    <div class="text-sm text-red-400">Unknown schedule</div>
                 {% endif %}
             </div>
-            <div class="bg-gray-800 p-3 rounded max-h-40 overflow-y-auto text-xs mt-2">
+
+            <!-- Downloads summary -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Downloads</div>
+                {% if download_size %}
+                    <div class="text-base font-semibold text-white">{{ download_size }}</div>
+                    <div class="text-xs text-gray-500 mt-1">{{ downloads | length }} file(s)</div>
+                {% else %}
+                    <div class="text-sm text-gray-400">No downloads yet</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Download file list -->
+        {% if downloads %}
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 max-w-3xl">
+            <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">Downloaded Files</div>
+            <div class="bg-gray-950 rounded-lg p-3 max-h-36 overflow-y-auto text-xs text-gray-400 space-y-0.5 font-mono" style="background-color:#060b14">
                 {% for file in downloads %}
-                    {{ file }}<br>
+                    <div class="truncate hover:text-gray-200 transition-colors">{{ file }}</div>
                 {% endfor %}
             </div>
-        </section>
+        </div>
+        {% endif %}
 
-        <!-- Last Runs Card -->
-        <section class="bg-gray-900 rounded-xl p-6 shadow-lg max-w-3xl mb-4">
-            <h2 class="text-lg font-bold mb-2">Last Runs</h2>
+        <!-- Last Runs -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 max-w-3xl">
+            <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">Last Runs</div>
+            {% if runs %}
             <table class="w-full text-xs">
                 <thead>
-                    <tr class="border-b border-gray-700">
-                        <th class="p-2 text-left">Timestamp</th>
-                        <th class="p-2 text-left">Status</th>
-                        <th class="p-2 text-left">Log</th>
+                    <tr class="border-b border-gray-800">
+                        <th class="py-2 pr-4 text-left text-gray-400 font-medium">Timestamp</th>
+                        <th class="py-2 pr-4 text-left text-gray-400 font-medium">Status</th>
+                        <th class="py-2 text-left text-gray-400 font-medium">Log</th>
                     </tr>
                 </thead>
                 <tbody>
                 {% for run in runs %}
-                    <tr class="border-b border-gray-800">
-                        <td class="p-2">{{ run.timestamp }}</td>
-                        <td class="p-2 {% if run.status == 'success' %}text-green-500{% else %}text-red-500{% endif %}">
-                            {{ run.status }}
+                    <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                        <td class="py-2 pr-4 text-gray-300 font-mono">{{ run.timestamp }}</td>
+                        <td class="py-2 pr-4">
+                            {% if run.status == 'success' %}
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-900/50 text-green-400 text-xs font-medium">
+                                    ✓ success
+                                </span>
+                            {% else %}
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-900/50 text-red-400 text-xs font-medium">
+                                    ✗ {{ run.status }}
+                                </span>
+                            {% endif %}
                         </td>
-                        <td class="p-2">
-                            <a href="/logs/{{ run.log_name }}" class="text-blue-400 underline">view</a>
+                        <td class="py-2">
+                            <a href="/logs/{{ run.log_name }}" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 transition-colors">view</a>
                         </td>
                     </tr>
                 {% endfor %}
                 </tbody>
             </table>
-        </section>
+            {% else %}
+                <p class="text-xs text-gray-500">No runs yet.</p>
+            {% endif %}
+        </div>
 
-        <!-- Log Viewer Card -->
-        <section class="bg-gray-900 rounded-xl p-6 shadow-lg max-w-3xl">
-            <h2 class="text-lg font-bold mb-2">Log Viewer</h2>
-            <div class="flex gap-2 mb-2">
-                <select id="log-select" class="bg-gray-800 text-xs rounded p-2 flex-1"></select>
-                <button onclick="refreshLog()" class="bg-blue-700 hover:bg-blue-800 px-3 py-2 rounded text-xs">Refresh</button>
+        <!-- Log Viewer -->
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 max-w-3xl">
+            <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">Log Viewer</div>
+            <div class="flex gap-2 mb-3">
+                <select id="log-select"
+                    class="flex-1 bg-gray-800 border border-gray-700 text-xs text-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors">
+                </select>
+                <button onclick="refreshLog()"
+                    class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium transition-colors">
+                    Refresh
+                </button>
             </div>
-            <pre id="log-content" class="bg-black text-green-400 rounded p-3 max-h-64 overflow-y-auto text-xs">Select a log to view...</pre>
-        </section>
+            <pre id="log-content"
+                class="rounded-lg p-4 max-h-72 overflow-y-auto text-xs font-mono leading-relaxed text-green-400"
+                style="background-color:#060b14">Select a log to view...</pre>
+        </div>
+
     </main>
 </div>
 
 <!-- AUTH MODAL -->
-<div id="auth-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center hidden z-50">
-    <div class="bg-gray-800 rounded-xl p-6 w-full max-w-lg shadow-2xl">
-        <div class="flex justify-between items-center mb-4">
-            <h2 class="text-xl font-bold">🔐 Authenticate with YouTube</h2>
-            <button onclick="closeAuthModal()" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+<div id="auth-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center hidden z-50">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl mx-4">
+        <div class="flex justify-between items-center mb-5">
+            <h2 class="text-lg font-bold text-white">🔐 Authenticate with YouTube</h2>
+            <button onclick="closeAuthModal()"
+                class="text-gray-500 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-800 transition-colors">
+                &times;
+            </button>
         </div>
-        <ol class="text-sm text-gray-300 space-y-2 mb-5">
-            <li><span class="text-white font-semibold">1.</span> Install the
-                <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
-                   target="_blank" class="text-blue-400 underline">Get cookies.txt LOCALLY</a>
-                extension (Chrome/Edge).
+        <ol class="text-sm text-gray-300 space-y-3 mb-6">
+            <li class="flex gap-3">
+                <span class="text-indigo-400 font-bold shrink-0">1.</span>
+                <span>Install the
+                    <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
+                       target="_blank" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">Get cookies.txt LOCALLY</a>
+                    extension (Chrome/Edge).
+                </span>
             </li>
-            <li><span class="text-white font-semibold">2.</span> Go to
-                <a href="https://music.youtube.com" target="_blank" class="text-blue-400 underline">music.youtube.com</a>
-                and make sure you're logged in.
+            <li class="flex gap-3">
+                <span class="text-indigo-400 font-bold shrink-0">2.</span>
+                <span>Go to
+                    <a href="https://music.youtube.com" target="_blank" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">music.youtube.com</a>
+                    and make sure you're logged in.
+                </span>
             </li>
-            <li><span class="text-white font-semibold">3.</span> Click the extension icon and export cookies for <code class="bg-gray-700 px-1 rounded">music.youtube.com</code>.</li>
-            <li><span class="text-white font-semibold">4.</span> Upload the downloaded <code class="bg-gray-700 px-1 rounded">cookies.txt</code> file below.</li>
+            <li class="flex gap-3">
+                <span class="text-indigo-400 font-bold shrink-0">3.</span>
+                <span>Click the extension icon and export cookies for <code class="bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">music.youtube.com</code>.</span>
+            </li>
+            <li class="flex gap-3">
+                <span class="text-indigo-400 font-bold shrink-0">4.</span>
+                <span>Upload the downloaded <code class="bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">cookies.txt</code> file below.</span>
+            </li>
         </ol>
         <form method="post" action="/auth/upload" enctype="multipart/form-data" class="space-y-3">
-            <input type="file" name="cookies" accept=".txt"
-                class="block w-full text-sm text-gray-300 bg-gray-900 border border-gray-600 rounded p-2
-                       file:mr-3 file:py-1 file:px-3 file:rounded file:border-0
-                       file:bg-blue-700 file:text-white file:cursor-pointer" required>
+            <input type="file" name="cookies" accept=".txt" required
+                class="block w-full text-sm text-gray-300 bg-gray-800 border border-gray-700 rounded-lg p-2
+                       file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0
+                       file:bg-indigo-600 file:text-white file:cursor-pointer file:text-xs
+                       hover:file:bg-indigo-500 transition-colors">
             <button type="submit"
-                class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded w-full font-semibold">
+                class="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-500 font-semibold text-sm transition-colors">
                 Upload &amp; Save
             </button>
         </form>
@@ -152,105 +210,103 @@
 </div>
 
 <script>
-        // Dynamic Start/Stop button logic
-        let isRunning = false;
-        const runStopForm = document.getElementById('runstop-form');
-        const runStopBtn = document.getElementById('runstop-btn');
-        async function updateRunStopButton() {
-            const response = await fetch("/download-status", { method: "POST" });
-            const data = await response.json();
-            isRunning = data.status === "running";
-            if (isRunning) {
-                runStopForm.action = "/stop-now";
-                runStopBtn.textContent = "✔ Running";
-                runStopBtn.className = "bg-green-600 hover:bg-red-600 hover:text-white px-4 py-2 rounded w-full font-semibold transition-colors";
-                runStopBtn.onmouseover = () => { runStopBtn.textContent = "⏹ Stop"; };
-                runStopBtn.onmouseout = () => { runStopBtn.textContent = "✔ Running"; };
-            } else {
-                runStopForm.action = "/run-now";
-                runStopBtn.textContent = "▶ Start";
-                runStopBtn.className = "bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded w-full font-semibold transition-colors";
-                runStopBtn.onmouseover = null;
-                runStopBtn.onmouseout = null;
-            }
+    let isRunning = false;
+    const runStopForm = document.getElementById('runstop-form');
+    const runStopBtn = document.getElementById('runstop-btn');
+
+    async function updateRunStopButton() {
+        const response = await fetch("/download-status");
+        const data = await response.json();
+        isRunning = data.status === "running";
+        if (isRunning) {
+            runStopForm.action = "/stop-now";
+            runStopBtn.textContent = "✔ Running";
+            runStopBtn.className = "w-full px-3 py-2 rounded-lg bg-green-600 hover:bg-red-600 text-sm font-semibold transition-colors";
+            runStopBtn.onmouseover = () => { runStopBtn.textContent = "⏹ Stop"; };
+            runStopBtn.onmouseout  = () => { runStopBtn.textContent = "✔ Running"; };
+        } else {
+            runStopForm.action = "/run-now";
+            runStopBtn.textContent = "▶ Start";
+            runStopBtn.className = "w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold transition-colors";
+            runStopBtn.onmouseover = null;
+            runStopBtn.onmouseout  = null;
         }
-        setInterval(updateRunStopButton, 2000);
-        updateRunStopButton();
-    // Download status badge
+    }
+
+    setInterval(updateRunStopButton, 2000);
+    updateRunStopButton();
+
+    document.getElementById('runstop-form').addEventListener('submit', () => {
+        setTimeout(() => { updateRunStopButton(); updateDownloadStatus(); }, 400);
+    });
+
     async function updateDownloadStatus() {
-        const response = await fetch("/download-status", { method: "POST" });
+        const response = await fetch("/download-status");
         const data = await response.json();
         const badge = document.getElementById("download-status-badge");
         if (data.status === "running") {
-            badge.textContent = "📥 Downloading...";
-            badge.className = "text-xs text-green-500";
+            badge.innerHTML = '<span class="inline-flex items-center gap-1 text-green-400"><span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block"></span>Downloading...</span>';
         } else {
-            badge.textContent = "✅ Idle";
-            badge.className = "text-xs text-gray-400";
+            badge.innerHTML = '<span class="text-gray-600">Idle</span>';
         }
     }
+
     setInterval(updateDownloadStatus, 5000);
     updateDownloadStatus();
 
-    // Auth badge styled as button
-    fetch('/auth/status')
-        .then(r => r.json())
-        .then(data => {
-            const badge = document.getElementById('auth-badge');
-            const loginBtn = document.getElementById('auth-btn');
-            const revokeForm = document.getElementById('revoke-form');
-            if (data.authenticated) {
-                badge.innerHTML = '<button class="bg-green-600 hover:bg-red-600 hover:text-white px-4 py-2 rounded w-full font-semibold text-xs transition-colors">✓ Authenticated</button>';
-                revokeForm.classList.remove('hidden');
-                loginBtn.classList.add('hidden');
-            } else {
-                badge.innerHTML = '<button class="bg-red-900 hover:bg-blue-600 hover:text-white px-4 py-2 rounded w-full font-semibold text-xs transition-colors">✗ Not authenticated</button>';
-                loginBtn.classList.remove('hidden');
-                revokeForm.classList.add('hidden');
-            }
-        });
-
-    function openAuthModal() {
-        document.getElementById('auth-modal').classList.remove('hidden');
+    function updateAuthUI() {
+        fetch('/auth/status')
+            .then(r => r.json())
+            .then(data => {
+                const badge    = document.getElementById('auth-badge');
+                const loginBtn = document.getElementById('auth-btn');
+                const revokeForm = document.getElementById('revoke-form');
+                if (data.authenticated) {
+                    badge.innerHTML = '<div class="w-full text-center text-xs px-3 py-1.5 rounded-lg font-semibold bg-green-900/60 border border-green-800 text-green-400">✓ Authenticated</div>';
+                    loginBtn.style.display  = 'none';
+                    revokeForm.style.display = '';
+                } else {
+                    badge.innerHTML = '<div class="w-full text-center text-xs px-3 py-1.5 rounded-lg font-semibold bg-red-900/40 border border-red-900 text-red-400">✗ Not authenticated</div>';
+                    loginBtn.style.display  = '';
+                    revokeForm.style.display = 'none';
+                }
+            });
     }
-    function closeAuthModal() {
-        document.getElementById('auth-modal').classList.add('hidden');
-    }
+    updateAuthUI();
 
-    // Log viewer logic
+    function openAuthModal()  { document.getElementById('auth-modal').classList.remove('hidden'); }
+    function closeAuthModal() { document.getElementById('auth-modal').classList.add('hidden'); }
+
     async function fetchLogList() {
-        const res = await fetch('/api/runs');
+        const res  = await fetch('/api/runs');
         const runs = await res.json();
         const select = document.getElementById('log-select');
         select.innerHTML = '';
         runs.forEach(run => {
             if (run.log_name) {
                 const opt = document.createElement('option');
-                opt.value = run.log_name;
+                opt.value   = run.log_name;
                 opt.textContent = run.log_name;
                 select.appendChild(opt);
             }
         });
-        if (select.options.length > 0) {
-            select.selectedIndex = 0;
-            fetchLog();
-        }
+        if (select.options.length > 0) { select.selectedIndex = 0; fetchLog(); }
     }
+
     async function fetchLog() {
         const select = document.getElementById('log-select');
         const log = select.value;
         if (!log) return;
-        const res = await fetch(`/logs/${log}`);
+        const res  = await fetch(`/logs/${log}`);
         const text = await res.text();
         document.getElementById('log-content').textContent = text || 'Log is empty.';
     }
-    function refreshLog() {
-        fetchLog();
-    }
+
+    function refreshLog() { fetchLog(); }
+
     document.getElementById('log-select').addEventListener('change', fetchLog);
     window.addEventListener('DOMContentLoaded', fetchLogList);
 </script>
-
 
 </body>
 </html>

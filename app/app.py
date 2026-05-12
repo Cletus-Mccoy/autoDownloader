@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, send_from_directory, request, redirect, Response, render_template
 import os
 import json
+import shutil
 import threading
 import subprocess
 from scripts.timer import get_next_run_safe
@@ -47,7 +48,8 @@ def index():
         runs=runs[:10],
         next_run=next_run,
         delta=delta,
-        downloads=get_files()
+        downloads=get_files(),
+        download_size=get_download_size()
     )
 
 
@@ -59,12 +61,27 @@ def get_files():
     return result
 
 
+def get_download_size():
+    total = 0
+    for root, _, files in os.walk(DOWNLOAD_DIR):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    if total == 0:
+        return None
+    for unit in ("B", "KB", "MB", "GB"):
+        if total < 1024:
+            return f"{total:.1f} {unit}"
+        total /= 1024
+    return f"{total:.2f} TB"
+
+
 @app.route("/run-stream")
 def run_stream():
     return Response(run_scheduler_stream(), mimetype="text/event-stream")
 
-
-@app.route("/run-now", methods=["POST"])
 
 def run_target():
     global run_active
@@ -95,15 +112,12 @@ def stop_now():
     # No direct way to kill thread, but flag is set for cooperative stop
     return redirect("/")
 
-@app.route("/download-status", methods=["POST"])
-
+@app.route("/download-status", methods=["GET"])
 def download_status():
-    # Check if run is active (thread state only)
     global run_thread
     if run_thread and run_thread.is_alive():
         return jsonify({"status": "running"})
-    else:
-        return jsonify({"status": "idle"})
+    return jsonify({"status": "idle"})
     
  
 @app.route("/clear-logs", methods=["POST"])
@@ -114,8 +128,8 @@ def clear_logs():
 
 @app.route("/clear-downloads", methods=["POST"])
 def clear_downloads():
-    for f in os.listdir(DOWNLOAD_DIR):
-        os.remove(os.path.join(DOWNLOAD_DIR, f))
+    shutil.rmtree(DOWNLOAD_DIR, ignore_errors=True)
+    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     return redirect("/")
 
 @app.route("/auth/status")
