@@ -566,6 +566,7 @@
         fetchRuns();
         fetchLogList();
         refreshDownloadSummary();
+        fetchDownloadPage(dlCurrentPage);
         updateRunStopButton();
     }
 
@@ -575,13 +576,13 @@
         if (globalRefreshInterval) {
             clearInterval(globalRefreshInterval);
             globalRefreshInterval = null;
-            btn.className       = 'w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center justify-center gap-2';
+            btn.className         = 'w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center justify-center gap-2';
             indicator.textContent = 'off';
             indicator.className   = 'text-gray-600 text-xs';
         } else {
-            globalRefreshInterval = setInterval(globalRefresh, 30000);
-            btn.className       = 'w-full px-3 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-xs font-medium transition-colors text-white flex items-center justify-center gap-2';
-            indicator.textContent = '30s';
+            globalRefreshInterval = setInterval(globalRefresh, 15000);
+            btn.className         = 'w-full px-3 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-xs font-medium transition-colors text-white flex items-center justify-center gap-2';
+            indicator.textContent = '15s';
             indicator.className   = 'text-indigo-300 text-xs';
         }
     }
