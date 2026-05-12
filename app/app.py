@@ -16,13 +16,22 @@ LOG_DIR = f"{DATA_DIR}/logs"
 AUTH_DIR = f"{DATA_DIR}/auth"
 COOKIES_FILE = f"{AUTH_DIR}/cookies.txt"
 
-allow_run = True
+
+# Thread-safe run control
+from threading import Lock
+run_lock = Lock()
+run_thread = None
+run_active = False
+
 
 def load_runs():
     if not os.path.exists(RUNS_FILE):
         return []
-    with open(RUNS_FILE) as f:
-        return json.load(f)
+    try:
+        with open(RUNS_FILE) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, ValueError):
+        return []
 
 
 @app.route("/")
@@ -56,21 +65,42 @@ def run_stream():
 
 
 @app.route("/run-now", methods=["POST"])
+
+def run_target():
+    global run_active
+    run_active = True
+    try:
+        run_downloader()
+    finally:
+        run_active = False
+
+@app.route("/run-now", methods=["POST"])
 def run_now():
-    t = threading.Thread(target=run_downloader, daemon=True)
-    while allow_run:
-        t.start()
+    global run_thread
+    if run_lock.locked() or (run_thread and run_thread.is_alive()):
         return redirect("/")
+    run_thread = threading.Thread(target=run_target, daemon=True)
+    run_lock.acquire()
+    try:
+        run_thread.start()
+    finally:
+        run_lock.release()
+    return redirect("/")
 
 @app.route("/stop-now", methods=["POST"])
+
 def stop_now():
-    allow_run = False
+    global run_active
+    run_active = False
+    # No direct way to kill thread, but flag is set for cooperative stop
     return redirect("/")
-    allow_run = True
 
 @app.route("/download-status", methods=["POST"])
+
 def download_status():
-    if subprocess.run(["pgrep", "-f", "yt-dlp"], stdout=subprocess.PIPE).returncode == 0:
+    # Check if run is active (thread state only)
+    global run_thread
+    if run_thread and run_thread.is_alive():
         return jsonify({"status": "running"})
     else:
         return jsonify({"status": "idle"})
