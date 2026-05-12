@@ -20,7 +20,8 @@ DOWNLOAD_DIR = f"{DATA_DIR}/downloads"
 LOG_DIR = f"{DATA_DIR}/logs"
 AUTH_DIR = f"{DATA_DIR}/auth"
 COOKIES_FILE = f"{AUTH_DIR}/cookies.txt"
-CRON_FILE = "/etc/cron.d/ytmusic"
+CRON_FILE   = "/etc/cron.d/ytmusic"
+CRON_SUFFIX = "root python /app/scripts/scheduler.py >> /var/log/cron.log 2>&1"
 
 
 from threading import Lock
