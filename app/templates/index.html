@@ -16,7 +16,7 @@
 
 <body class="bg-gray-950 text-gray-100 min-h-screen" style="background-color:#0a0f1a">
 
-<div class="flex min-h-screen">
+<div class="flex h-screen overflow-hidden">
     <!-- Sidebar -->
     <aside class="w-60 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col p-5 gap-6">
         <div>
@@ -87,14 +87,14 @@
     </aside>
 
     <!-- Main Content -->
-    <main class="flex-1 p-8 overflow-auto">
-        <div class="grid gap-4" style="grid-template-columns: minmax(0,2fr) minmax(0,1fr)">
+    <main class="flex-1 p-8 overflow-hidden flex flex-col">
+        <div class="grid gap-4 flex-1 min-h-0" style="grid-template-columns: minmax(0,2fr) minmax(0,1fr)">
 
             <!-- LEFT: wide column — Download list + Log Viewer -->
-            <div class="flex flex-col gap-4 min-w-0">
+            <div class="flex flex-col gap-4 min-w-0 h-full">
 
                 <!-- Downloaded Files (half height) -->
-                <div class="bg-gray-900 border border-gray-800 rounded-xl flex flex-col overflow-hidden" style="max-height:48vh">
+                <div class="bg-gray-900 border border-gray-800 rounded-xl flex flex-col overflow-hidden flex-1 min-h-0">
                     <button onclick="toggleCard('dl-files')"
                         class="flex-shrink-0 w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-800/40 transition-colors">
                         <span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Downloaded Files</span>
@@ -103,7 +103,7 @@
                         </svg>
                     </button>
                     <div id="dl-files-body" class="flex flex-col flex-1 min-h-0 px-5 pb-4">
-                        <div id="download-list" class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden divide-y divide-gray-800/60">
+                        <div id="download-list" class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden divide-y divide-gray-800/60" style="scrollbar-gutter:stable">
                             <div class="py-4 text-xs text-gray-600">Loading...</div>
                         </div>
                         <div id="dl-pagination" class="flex-shrink-0 flex items-center justify-between pt-3 mt-1 border-t border-gray-800">
@@ -121,7 +121,7 @@
                 </div>
 
                 <!-- Log Viewer (half height) -->
-                <div class="bg-gray-900 border border-gray-800 rounded-xl flex flex-col overflow-hidden" style="max-height:48vh">
+                <div class="bg-gray-900 border border-gray-800 rounded-xl flex flex-col overflow-hidden flex-1 min-h-0">
                     <button onclick="toggleCard('log-viewer')"
                         class="flex-shrink-0 w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-800/40 transition-colors">
                         <span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Log Viewer</span>
@@ -145,7 +145,7 @@
                             </button>
                         </div>
                         <pre id="log-content"
-                            class="flex-1 min-h-0 rounded-lg p-4 overflow-y-auto overflow-x-hidden text-xs font-mono leading-relaxed text-green-400 whitespace-pre-wrap break-all"
+                            class="flex-1 min-h-0 rounded-lg p-4 overflow-y-auto overflow-x-auto text-xs font-mono leading-relaxed text-green-400 whitespace-pre"
                             style="background-color:#060b14">Select a log to view...</pre>
                     </div>
                 </div>
@@ -153,10 +153,10 @@
             </div>
 
             <!-- RIGHT: narrow column — info cards + Last Runs -->
-            <div class="flex flex-col gap-4 min-w-0">
+            <div class="flex flex-col gap-4 min-w-0 h-full">
 
                 <!-- Next scheduled run -->
-                <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex-shrink-0">
                     <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Next scheduled run</div>
                     {% if next_run %}
                         <div class="text-base font-semibold text-white">{{ next_run }}</div>
@@ -169,7 +169,7 @@
                 </div>
 
                 <!-- Downloads summary -->
-                <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex-shrink-0">
                     <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Downloads</div>
                     <div id="download-size" class="text-base font-semibold text-white">
                         {% if download_size %}{{ download_size }}{% else %}&mdash;{% endif %}
@@ -178,7 +178,7 @@
                 </div>
 
                 <!-- Last Runs -->
-                <div class="bg-gray-900 border border-gray-800 rounded-xl flex flex-col overflow-hidden" style="max-height:48vh">
+                <div class="bg-gray-900 border border-gray-800 rounded-xl flex flex-col overflow-hidden flex-1 min-h-0">
                     <button onclick="toggleCard('last-runs')"
                         class="flex-shrink-0 w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-800/40 transition-colors">
                         <span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Last Runs</span>
@@ -354,7 +354,9 @@
     setInterval(updateRunStopButton, 2000);
     updateRunStopButton();
 
-    runStopForm.addEventListener('submit', () => {
+    runStopForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try { await fetch(runStopForm.action, { method: 'POST' }); } catch (_) {}
         setTimeout(updateRunStopButton, 600);
     });
 
@@ -405,19 +407,18 @@
         try {
             const runs = await fetch('/api/runs').then(r => r.json());
             const tbody = document.getElementById('runs-tbody');
-            if (!runs.length) {
-                tbody.innerHTML = '<tr><td colspan="3" class="py-2 text-gray-600 text-xs">No runs yet.</td></tr>';
-                return;
-            }
-            tbody.innerHTML = runs.slice(0, 10).map(run => {
-                const badge = runBadge(run.trigger, run.status);
-                const ts = run.timestamp ? run.timestamp.replace('T', ' ').slice(0, 16) : '—';
-                return `<tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
-                    <td class="py-2 pr-3 text-gray-400 font-mono text-xs whitespace-nowrap">${ts}</td>
-                    <td class="py-2 pr-2">${badge}</td>
-                    <td class="py-2"><a href="/logs/${run.log_name}" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 transition-colors">view</a></td>
-                </tr>`;
-            }).join('');
+            const newHtml = !runs.length
+                ? '<tr><td colspan="3" class="py-2 text-gray-600 text-xs">No runs yet.</td></tr>'
+                : runs.slice(0, 10).map(run => {
+                    const badge = runBadge(run.trigger, run.status);
+                    const ts = run.timestamp ? run.timestamp.replace('T', ' ').slice(0, 16) : '—';
+                    return `<tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                        <td class="py-2 pr-3 text-gray-400 font-mono text-xs whitespace-nowrap">${ts}</td>
+                        <td class="py-2 pr-2">${badge}</td>
+                        <td class="py-2"><a href="/logs/${run.log_name}" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 transition-colors">view</a></td>
+                    </tr>`;
+                }).join('');
+            if (tbody.innerHTML !== newHtml) tbody.innerHTML = newHtml;
         } catch (_) {}
     }
     fetchRuns();
@@ -452,7 +453,7 @@
 
     function scrollLogToBottom() {
         const el = document.getElementById('log-content');
-        el.scrollTop = el.scrollHeight;
+        requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     }
 
     async function fetchLog() {
@@ -496,39 +497,39 @@
 
     async function fetchDownloadPage(page) {
         const list = document.getElementById('download-list');
-        list.innerHTML = '<div class="py-4 text-xs text-gray-600">Loading...</div>';
         try {
             const data = await fetch(`/api/downloads/metadata?page=${page}&limit=${DL_LIMIT}`).then(r => r.json());
             dlCurrentPage = data.page;
 
-            if (!data.files.length) {
-                list.innerHTML = '<div class="py-4 text-xs text-gray-600">No files yet.</div>';
-            } else {
-                list.innerHTML = data.files.map(f => {
+            const newHtml = !data.files.length
+                ? '<div class="py-4 text-xs text-gray-600">No files yet.</div>'
+                : data.files.map(f => {
                     const art = f.has_art
-                        ? `<img src="/api/downloads/art/${f.path.split('/').map(encodeURIComponent).join('/')}" class="w-11 h-11 rounded object-cover flex-shrink-0 bg-gray-800" loading="lazy" onerror="this.style.display='none'">`
-                        : `<div class="w-11 h-11 rounded flex-shrink-0 bg-gray-800 flex items-center justify-center text-gray-600 text-lg">♪</div>`;
+                        ? `<img src="/api/downloads/art/${f.path.split('/').map(encodeURIComponent).join('/')}" class="w-8 h-8 rounded object-cover flex-shrink-0 bg-gray-800" loading="lazy" onerror="this.style.display='none'">`
+                        : `<div class="w-8 h-8 rounded flex-shrink-0 bg-gray-800 flex items-center justify-center text-gray-600 text-sm">♪</div>`;
                     const folder = f.path.includes('/') ? f.path.split('/')[0].replace(/_/g, ' ') : '';
                     const meta   = [f.artist, folder].filter(Boolean).join(' · ');
-                    return `<div class="flex items-center gap-3 py-2.5 hover:bg-gray-800/30 rounded-lg px-1 transition-colors -mx-1">
+                    return `<div class="flex items-center gap-2 py-1.5 hover:bg-gray-800/30 rounded-lg px-1 transition-colors -mx-1">
                         ${art}
                         <div class="min-w-0 flex-1">
                             <div class="text-xs font-medium text-gray-200 truncate">${f.title || f.path.split('/').pop().replace(/\.mp3$/i,'')}</div>
-                            <div class="text-xs text-gray-500 truncate mt-0.5">${meta}</div>
+                            <div class="text-xs text-gray-500 truncate">${meta}</div>
                         </div>
-                        <div class="flex-shrink-0 text-right">
+                        <div class="flex-shrink-0 text-right pr-1">
                             <div class="text-xs text-gray-500">${fmtDuration(f.duration)}</div>
-                            <div class="text-xs text-gray-700 mt-0.5">${fmtSize(f.size)}</div>
+                            <div class="text-xs text-gray-700">${fmtSize(f.size)}</div>
                         </div>
                     </div>`;
                 }).join('');
-            }
+
+            if (list.innerHTML !== newHtml) list.innerHTML = newHtml;
 
             document.getElementById('dl-page-info').textContent = `Page ${data.page} of ${data.pages}  (${data.total} tracks)`;
             document.getElementById('dl-prev').disabled = data.page <= 1;
             document.getElementById('dl-next').disabled = data.page >= data.pages;
         } catch (_) {
-            list.innerHTML = '<div class="py-4 text-xs text-red-400">Failed to load files.</div>';
+            const err = '<div class="py-4 text-xs text-red-400">Failed to load files.</div>';
+            if (list.innerHTML !== err) list.innerHTML = err;
         }
     }
 
