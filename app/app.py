@@ -11,7 +11,7 @@ from mutagen.id3 import ID3
 from mutagen import File as MutagenFile
 from scripts.timer import get_next_run_safe
 from scripts.runner import run_scheduler_stream
-from scripts.scheduler import log_run
+from scripts.scheduler import log_run as _cron_log_run
 
 app = Flask(__name__)
 
@@ -24,6 +24,32 @@ COOKIES_FILE = f"{AUTH_DIR}/cookies.txt"
 CRON_FILE   = "/etc/cron.d/ytmusic"
 CRON_SUFFIX = "root python /app/scripts/scheduler.py >> /var/log/cron.log 2>&1"
 MUSIC_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aac", ".wma"}
+
+
+def _persist_run(status, log_file, trigger="manual"):
+    """Write a run entry to runs.json using an atomic temp-file rename.
+
+    Avoids partial-write corruption and sidesteps Windows/WSL2 in-place
+    file-overwrite locking that silently drops writes on bind mounts.
+    """
+    run = {
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "status": status,
+        "trigger": trigger,
+        "log": log_file,
+    }
+    try:
+        with open(RUNS_FILE) as f:
+            runs = json.load(f)
+    except Exception:
+        runs = []
+    runs.insert(0, run)
+    tmp = RUNS_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(runs[:50], f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, RUNS_FILE)
 
 
 from threading import Lock
@@ -126,12 +152,11 @@ def run_target():
             pass
     finally:
         try:
-            log_run(status, log_file, trigger="manual")
-        except Exception as log_err:
-            # write the failure into the run's own log so it's visible in the UI
+            _persist_run(status, log_file, trigger="manual")
+        except Exception as persist_err:
             try:
                 with open(log_file, "a") as lf:
-                    lf.write(f"\n[log_run failed: {log_err}]\n")
+                    lf.write(f"\n[_persist_run failed: {persist_err}]\n")
             except Exception:
                 pass
         _current_proc = None
