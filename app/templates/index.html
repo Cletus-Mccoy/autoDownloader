@@ -448,6 +448,8 @@
 
     runStopForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const isStart = runStopForm.action.endsWith('/run-now');
+        if (isStart) _prevRunning = true;
         try { await fetch(runStopForm.action, { method: 'POST' }); } catch (_) {}
         setTimeout(updateRunStopButton, 600);
     });

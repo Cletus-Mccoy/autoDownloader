@@ -103,6 +103,7 @@ def run_target():
     run_active = True
     ts = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     log_file = f"{LOG_DIR}/run_{ts}.log"
+    status = "failed"
     try:
         os.makedirs(LOG_DIR, exist_ok=True)
         with open(log_file, "w") as lf:
@@ -116,12 +117,18 @@ def run_target():
             status = "stopped"
         elif rc == 0:
             status = "success"
-        else:
-            status = "failed"
-        log_run(status, log_file, trigger="manual")
-    except Exception:
-        pass
+    except Exception as e:
+        try:
+            os.makedirs(LOG_DIR, exist_ok=True)
+            with open(log_file, "a") as lf:
+                lf.write(f"\n[runner error: {e}]\n")
+        except Exception:
+            pass
     finally:
+        try:
+            log_run(status, log_file, trigger="manual")
+        except Exception:
+            pass
         _current_proc = None
         run_active = False
 
