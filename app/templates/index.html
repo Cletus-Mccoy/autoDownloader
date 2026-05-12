@@ -46,12 +46,18 @@
 
             <div id="auth-badge" class="mb-3"></div>
             <button id="auth-btn" onclick="openAuthModal()"
-                class="w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold transition-colors mb-2">
-                🔐 Login
+                class="w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold transition-colors mb-2 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 flex-shrink-0 text-indigo-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                </svg>
+                <span class="flex-1 text-center">Login</span>
             </button>
             <form method="post" action="/auth/revoke" id="revoke-form" style="display:none">
-                <button class="w-full px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-xs font-semibold transition-colors">
-                    Logout
+                <button class="w-full px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-xs font-semibold transition-colors flex items-center gap-2">
+                    <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                    </svg>
+                    <span class="flex-1 text-center">Logout</span>
                 </button>
             </form>
         </div>
@@ -59,18 +65,27 @@
         <div class="border-t border-gray-800 pt-4 flex flex-col gap-2">
             <form id="runstop-form" method="post" action="/run-now">
                 <button id="runstop-btn" type="submit"
-                    class="w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold transition-colors">
-                    ▶ Start
+                    class="w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold transition-colors flex items-center gap-2">
+                    <svg id="runstop-icon" class="w-3.5 h-3.5 flex-shrink-0 text-indigo-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                        <path id="runstop-icon-path" stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 010 1.972l-11.54 6.347c-.75.412-1.667-.13-1.667-.986V5.653z"/>
+                    </svg>
+                    <span id="runstop-text" class="flex-1 text-center">Start</span>
                 </button>
             </form>
             <button type="button" onclick="openScheduleModal()"
-                class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300">
-                ⏱ Schedule
+                class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span class="flex-1 text-center">Schedule</span>
             </button>
             <button id="global-refresh-btn" type="button" onclick="toggleGlobalRefresh()"
-                class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center justify-center gap-2">
-                <span>↻ Auto-refresh</span>
-                <span id="global-refresh-indicator" class="text-gray-600 text-xs">off</span>
+                class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                <span class="flex-1 text-center">Auto-refresh</span>
+                <span id="global-refresh-indicator" class="text-gray-600 text-xs flex-shrink-0">off</span>
             </button>
             <!-- Clear dropdown -->
             <div class="relative" id="clear-dropdown-root">
@@ -417,6 +432,12 @@
     const runStopBtn  = document.getElementById('runstop-btn');
 
     let _prevRunning = false;
+    const runStopIconPath = document.getElementById('runstop-icon-path');
+    const runStopIcon     = document.getElementById('runstop-icon');
+    const runStopText     = document.getElementById('runstop-text');
+
+    const PATH_PLAY = "M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 010 1.972l-11.54 6.347c-.75.412-1.667-.13-1.667-.986V5.653z";
+    const PATH_STOP = "M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z";
 
     async function updateRunStopButton() {
         try {
@@ -430,14 +451,26 @@
             _prevRunning = running;
             if (running) {
                 runStopForm.action = "/stop-now";
-                runStopBtn.textContent = "✔ Running";
-                runStopBtn.className = "w-full px-3 py-2 rounded-lg bg-green-600 hover:bg-red-600 text-sm font-semibold transition-colors";
-                runStopBtn.onmouseover = () => { runStopBtn.textContent = "⏹ Stop"; };
-                runStopBtn.onmouseout  = () => { runStopBtn.textContent = "✔ Running"; };
+                runStopBtn.className = "w-full px-3 py-2 rounded-lg bg-green-700 hover:bg-red-700 text-xs font-semibold transition-colors flex items-center gap-2";
+                runStopIcon.setAttribute('stroke', 'currentColor');
+                runStopIcon.classList.replace('text-indigo-200', 'text-green-300');
+                runStopIconPath.setAttribute('d', PATH_STOP);
+                runStopText.textContent = "Running";
+                runStopBtn.onmouseover = () => {
+                    runStopText.textContent = "Stop";
+                    runStopIcon.classList.replace('text-green-300', 'text-red-300');
+                };
+                runStopBtn.onmouseout = () => {
+                    runStopText.textContent = "Running";
+                    runStopIcon.classList.replace('text-red-300', 'text-green-300');
+                };
             } else {
                 runStopForm.action = "/run-now";
-                runStopBtn.textContent = "▶ Start";
-                runStopBtn.className = "w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold transition-colors";
+                runStopBtn.className = "w-full px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold transition-colors flex items-center gap-2";
+                runStopIcon.classList.remove('text-green-300', 'text-red-300');
+                runStopIcon.classList.add('text-indigo-200');
+                runStopIconPath.setAttribute('d', PATH_PLAY);
+                runStopText.textContent = "Start";
                 runStopBtn.onmouseover = null;
                 runStopBtn.onmouseout  = null;
             }
@@ -604,13 +637,13 @@
                         : `<div class="w-8 h-8 rounded flex-shrink-0 bg-gray-800 flex items-center justify-center text-gray-600 text-sm">♪</div>`;
                     const folder = f.path.includes('/') ? f.path.split('/')[0].replace(/_/g, ' ') : '';
                     const meta   = [f.artist, folder].filter(Boolean).join(' · ');
-                    return `<div class="flex items-center gap-2 py-1.5 hover:bg-gray-800/30 rounded-lg px-1 transition-colors -mx-1">
+                    return `<div class="flex items-center gap-2 py-1.5 hover:bg-gray-800/30 rounded-lg pl-1 pr-3 transition-colors -ml-1">
                         ${art}
                         <div class="min-w-0 flex-1">
                             <div class="text-xs font-medium text-gray-200 truncate">${f.title || f.path.split('/').pop().replace(/\.mp3$/i,'')}</div>
                             <div class="text-xs text-gray-500 truncate">${meta}</div>
                         </div>
-                        <div class="flex-shrink-0 text-right pr-1">
+                        <div class="flex-shrink-0 text-right">
                             <div class="text-xs text-gray-500">${fmtDuration(f.duration)}</div>
                             <div class="text-xs text-gray-700">${fmtSize(f.size)}</div>
                         </div>
@@ -689,20 +722,23 @@
         updateRunStopButton();
     }
 
+    const GR_CLASS_OFF = 'w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2';
+    const GR_CLASS_ON  = 'w-full px-3 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-xs font-medium transition-colors text-indigo-100 flex items-center gap-2';
+
     function toggleGlobalRefresh() {
         const btn       = document.getElementById('global-refresh-btn');
         const indicator = document.getElementById('global-refresh-indicator');
         if (globalRefreshInterval) {
             clearInterval(globalRefreshInterval);
             globalRefreshInterval = null;
-            btn.className         = 'w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center justify-center gap-2';
+            btn.className         = GR_CLASS_OFF;
             indicator.textContent = 'off';
-            indicator.className   = 'text-gray-600 text-xs';
+            indicator.className   = 'text-gray-600 text-xs flex-shrink-0';
         } else {
             globalRefreshInterval = setInterval(globalRefresh, 15000);
-            btn.className         = 'w-full px-3 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-xs font-medium transition-colors text-white flex items-center justify-center gap-2';
+            btn.className         = GR_CLASS_ON;
             indicator.textContent = '15s';
-            indicator.className   = 'text-indigo-300 text-xs';
+            indicator.className   = 'text-indigo-300 text-xs flex-shrink-0';
         }
     }
 
