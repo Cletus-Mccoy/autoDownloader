@@ -14,26 +14,21 @@
     <aside class="w-64 bg-gray-900 p-6 flex flex-col gap-8 border-r border-gray-800">
         <div>
             <h1 class="text-2xl font-bold tracking-tight mb-2">🎵 YT Music Downloader</h1>
-            <div id="auth-badge" class="text-xs px-3 py-1 rounded-full font-medium mb-2"></div>
+            <div id="auth-badge" class="mb-2"></div>
             <button id="auth-btn" onclick="openAuthModal()"
-                class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded text-xs w-full hidden mb-2">
+                class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded w-full font-semibold text-xs hidden mb-2">
                 🔐 Login
             </button>
             <form method="post" action="/auth/revoke" id="revoke-form" class="hidden mb-2">
-                <button class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-xs w-full">
-                    Logout
+                <button class="bg-green-600 hover:bg-red-600 hover:text-white px-4 py-2 rounded w-full font-semibold text-xs transition-colors">
+                    ✓ Authenticated (Logout)
                 </button>
             </form>
         </div>
         <div class="flex flex-col gap-2">
-            <form method="post" action="/run-now">
-                <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded w-full font-semibold">
-                    ▶ Run Now
-                </button>
-            </form>
-            <form method="post" action="/stop-now">
-                <button class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded w-full font-semibold">
-                    ⏹ Stop Run
+            <form id="runstop-form" method="post" action="/run-now">
+                <button id="runstop-btn" type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded w-full font-semibold transition-colors">
+                    ▶ Start
                 </button>
             </form>
             <form method="post" action="/clear-logs">
@@ -157,6 +152,30 @@
 </div>
 
 <script>
+        // Dynamic Start/Stop button logic
+        let isRunning = false;
+        const runStopForm = document.getElementById('runstop-form');
+        const runStopBtn = document.getElementById('runstop-btn');
+        async function updateRunStopButton() {
+            const response = await fetch("/download-status", { method: "POST" });
+            const data = await response.json();
+            isRunning = data.status === "running";
+            if (isRunning) {
+                runStopForm.action = "/stop-now";
+                runStopBtn.textContent = "✔ Running";
+                runStopBtn.className = "bg-green-600 hover:bg-red-600 hover:text-white px-4 py-2 rounded w-full font-semibold transition-colors";
+                runStopBtn.onmouseover = () => { runStopBtn.textContent = "⏹ Stop"; };
+                runStopBtn.onmouseout = () => { runStopBtn.textContent = "✔ Running"; };
+            } else {
+                runStopForm.action = "/run-now";
+                runStopBtn.textContent = "▶ Start";
+                runStopBtn.className = "bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded w-full font-semibold transition-colors";
+                runStopBtn.onmouseover = null;
+                runStopBtn.onmouseout = null;
+            }
+        }
+        setInterval(updateRunStopButton, 2000);
+        updateRunStopButton();
     // Download status badge
     async function updateDownloadStatus() {
         const response = await fetch("/download-status", { method: "POST" });
@@ -173,7 +192,7 @@
     setInterval(updateDownloadStatus, 5000);
     updateDownloadStatus();
 
-    // Auth badge
+    // Auth badge styled as button
     fetch('/auth/status')
         .then(r => r.json())
         .then(data => {
@@ -181,13 +200,13 @@
             const loginBtn = document.getElementById('auth-btn');
             const revokeForm = document.getElementById('revoke-form');
             if (data.authenticated) {
-                badge.textContent = '✓ Authenticated';
-                badge.className = 'text-xs px-3 py-1 rounded-full font-medium bg-green-800 text-green-300';
+                badge.innerHTML = '<button class="bg-green-600 hover:bg-red-600 hover:text-white px-4 py-2 rounded w-full font-semibold text-xs transition-colors">✓ Authenticated</button>';
                 revokeForm.classList.remove('hidden');
+                loginBtn.classList.add('hidden');
             } else {
-                badge.textContent = '✗ Not authenticated';
-                badge.className = 'text-xs px-3 py-1 rounded-full font-medium bg-red-900 text-red-300';
+                badge.innerHTML = '<button class="bg-red-900 hover:bg-blue-600 hover:text-white px-4 py-2 rounded w-full font-semibold text-xs transition-colors">✗ Not authenticated</button>';
                 loginBtn.classList.remove('hidden');
+                revokeForm.classList.add('hidden');
             }
         });
 
