@@ -6,6 +6,8 @@ import threading
 import subprocess
 import datetime
 from croniter import croniter
+from mutagen.mp3 import MP3
+from mutagen.id3 import ID3
 from scripts.timer import get_next_run_safe
 from scripts.runner import run_scheduler_stream
 from scripts.scheduler import log_run
@@ -229,6 +231,68 @@ def api_logs():
 @app.route("/api/downloads")
 def api_downloads():
     return jsonify({"files": get_files(), "size": get_download_size()})
+
+
+@app.route("/api/downloads/metadata")
+def downloads_metadata():
+    page  = max(1, int(request.args.get("page",  1)))
+    limit = max(1, min(int(request.args.get("limit", 20)), 100))
+
+    all_files = []
+    for root, _, files in os.walk(DOWNLOAD_DIR):
+        for fname in files:
+            if fname.lower().endswith(".mp3"):
+                fpath = os.path.join(root, fname)
+                rel   = fpath[len(DOWNLOAD_DIR):].lstrip("/")
+                all_files.append((rel, fpath))
+    all_files.sort(key=lambda x: x[0])
+
+    total      = len(all_files)
+    start      = (page - 1) * limit
+    page_files = all_files[start:start + limit]
+
+    result = []
+    for rel, fpath in page_files:
+        info = {"path": rel}
+        try:
+            audio = MP3(fpath)
+            tags  = audio.tags
+            info["title"]    = str(tags["TIT2"]) if tags and "TIT2" in tags else ""
+            info["artist"]   = str(tags["TPE1"]) if tags and "TPE1" in tags else ""
+            info["album"]    = str(tags["TALB"]) if tags and "TALB" in tags else ""
+            info["duration"] = int(audio.info.length)
+            info["has_art"]  = tags is not None and any(k.startswith("APIC") for k in tags)
+        except Exception:
+            pass
+        try:
+            info["size"] = os.path.getsize(fpath)
+        except OSError:
+            info["size"] = 0
+        result.append(info)
+
+    return jsonify({
+        "files": result,
+        "total": total,
+        "page":  page,
+        "pages": max(1, (total + limit - 1) // limit),
+        "limit": limit,
+    })
+
+
+@app.route("/api/downloads/art/<path:filename>")
+def download_art(filename):
+    fpath = os.path.join(DOWNLOAD_DIR, filename)
+    if not os.path.exists(fpath):
+        return "", 404
+    try:
+        tags = ID3(fpath)
+        for key in tags:
+            if key.startswith("APIC"):
+                apic = tags[key]
+                return Response(apic.data, mimetype=apic.mime)
+    except Exception:
+        pass
+    return "", 404
 
 
 @app.route("/api/cron", methods=["GET"])
