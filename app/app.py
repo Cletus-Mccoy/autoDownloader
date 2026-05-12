@@ -4,9 +4,10 @@ import json
 import shutil
 import threading
 import subprocess
+import datetime
 from scripts.timer import get_next_run_safe
 from scripts.runner import run_scheduler_stream
-from scripts.scheduler import run_downloader
+from scripts.scheduler import log_run
 
 app = Flask(__name__)
 
@@ -18,11 +19,11 @@ AUTH_DIR = f"{DATA_DIR}/auth"
 COOKIES_FILE = f"{AUTH_DIR}/cookies.txt"
 
 
-# Thread-safe run control
 from threading import Lock
 run_lock = Lock()
 run_thread = None
 run_active = False
+_current_proc = None
 
 
 def load_runs():
@@ -84,11 +85,30 @@ def run_stream():
 
 
 def run_target():
-    global run_active
+    global run_active, _current_proc
     run_active = True
+    ts = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    log_file = f"{LOG_DIR}/run_{ts}.log"
     try:
-        run_downloader()
+        os.makedirs(LOG_DIR, exist_ok=True)
+        with open(log_file, "w") as lf:
+            _current_proc = subprocess.Popen(
+                ["python3", "/app/scripts/download.py"],
+                stdout=lf, stderr=lf
+            )
+            _current_proc.wait()
+        rc = _current_proc.returncode
+        if rc is not None and rc < 0:
+            status = "stopped"
+        elif rc == 0:
+            status = "success"
+        else:
+            status = "failed"
+        log_run(status, log_file, trigger="manual")
+    except Exception:
+        pass
     finally:
+        _current_proc = None
         run_active = False
 
 @app.route("/run-now", methods=["POST"])
@@ -105,11 +125,11 @@ def run_now():
     return redirect("/")
 
 @app.route("/stop-now", methods=["POST"])
-
 def stop_now():
-    global run_active
+    global run_active, _current_proc
     run_active = False
-    # No direct way to kill thread, but flag is set for cooperative stop
+    if _current_proc and _current_proc.poll() is None:
+        _current_proc.terminate()
     return redirect("/")
 
 @app.route("/download-status", methods=["GET"])
@@ -120,6 +140,12 @@ def download_status():
     return jsonify({"status": "idle"})
     
  
+@app.route("/clear-runs", methods=["POST"])
+def clear_runs():
+    with open(RUNS_FILE, "w") as f:
+        json.dump([], f)
+    return redirect("/")
+
 @app.route("/clear-logs", methods=["POST"])
 def clear_logs():
     for f in os.listdir(LOG_DIR):
@@ -161,7 +187,46 @@ def get_log(name):
 
 @app.route("/api/runs")
 def api_runs():
-    return jsonify(load_runs())
+    runs = load_runs()
+    if runs:
+        return jsonify(runs)
+    # Fallback: synthesise entries from log files on disk
+    if not os.path.exists(LOG_DIR):
+        return jsonify([])
+    files = sorted(
+        [f for f in os.listdir(LOG_DIR) if f.endswith(".log")],
+        reverse=True
+    )[:50]
+    synthetic = []
+    for fname in files:
+        try:
+            ts_part = fname.replace("run_", "").replace(".log", "")
+            ts = datetime.datetime.strptime(ts_part, "%Y%m%d_%H%M%S").isoformat()
+        except ValueError:
+            ts = fname
+        synthetic.append({
+            "timestamp": ts,
+            "status": "unknown",
+            "log": os.path.join(LOG_DIR, fname),
+            "log_name": fname,
+        })
+    return jsonify(synthetic)
+
+
+@app.route("/api/logs")
+def api_logs():
+    if not os.path.exists(LOG_DIR):
+        return jsonify([])
+    files = sorted(
+        [f for f in os.listdir(LOG_DIR) if f.endswith(".log")],
+        reverse=True
+    )
+    return jsonify(files)
+
+
+@app.route("/api/downloads")
+def api_downloads():
+    return jsonify({"files": get_files(), "size": get_download_size()})
 
 
 if __name__ == "__main__":

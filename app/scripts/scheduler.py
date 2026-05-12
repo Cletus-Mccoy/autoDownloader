@@ -9,16 +9,20 @@ LOG_DIR = "/app/data/logs"
 os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs("/app/data", exist_ok=True)
 
-def log_run(status, log_file):
+def log_run(status, log_file, trigger="cron"):
     run = {
         "timestamp": datetime.datetime.utcnow().isoformat(),
         "status": status,
+        "trigger": trigger,
         "log": log_file
     }
 
     if os.path.exists(RUNS_FILE):
-        with open(RUNS_FILE) as f:
-            runs = json.load(f)
+        try:
+            with open(RUNS_FILE) as f:
+                runs = json.load(f)
+        except (json.JSONDecodeError, ValueError):
+            runs = []
     else:
         runs = []
 
