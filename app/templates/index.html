@@ -332,10 +332,18 @@
     const runStopForm = document.getElementById('runstop-form');
     const runStopBtn  = document.getElementById('runstop-btn');
 
+    let _prevRunning = false;
+
     async function updateRunStopButton() {
         try {
             const data = await fetch("/download-status").then(r => r.json());
             const running = data.status === "running";
+            if (_prevRunning && !running) {
+                fetchRuns();
+                refreshDownloadSummary();
+                fetchDownloadPage(dlCurrentPage);
+            }
+            _prevRunning = running;
             if (running) {
                 runStopForm.action = "/stop-now";
                 runStopBtn.textContent = "✔ Running";
@@ -407,18 +415,19 @@
         try {
             const runs = await fetch('/api/runs').then(r => r.json());
             const tbody = document.getElementById('runs-tbody');
-            const newHtml = !runs.length
-                ? '<tr><td colspan="3" class="py-2 text-gray-600 text-xs">No runs yet.</td></tr>'
-                : runs.slice(0, 10).map(run => {
-                    const badge = runBadge(run.trigger, run.status);
-                    const ts = run.timestamp ? run.timestamp.replace('T', ' ').slice(0, 16) : '—';
-                    return `<tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
-                        <td class="py-2 pr-3 text-gray-400 font-mono text-xs whitespace-nowrap">${ts}</td>
-                        <td class="py-2 pr-2">${badge}</td>
-                        <td class="py-2"><a href="/logs/${run.log_name}" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 transition-colors">view</a></td>
-                    </tr>`;
-                }).join('');
-            if (tbody.innerHTML !== newHtml) tbody.innerHTML = newHtml;
+            if (!runs.length) {
+                tbody.innerHTML = '<tr><td colspan="3" class="py-2 text-gray-600 text-xs">No runs yet.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = runs.slice(0, 10).map(run => {
+                const badge = runBadge(run.trigger, run.status);
+                const ts = run.timestamp ? run.timestamp.replace('T', ' ').slice(0, 16) : '—';
+                return `<tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+                    <td class="py-2 pr-3 text-gray-400 font-mono text-xs whitespace-nowrap">${ts}</td>
+                    <td class="py-2 pr-2">${badge}</td>
+                    <td class="py-2"><a href="/logs/${run.log_name}" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2 transition-colors">view</a></td>
+                </tr>`;
+            }).join('');
         } catch (_) {}
     }
     fetchRuns();
