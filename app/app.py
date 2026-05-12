@@ -8,6 +8,7 @@ import datetime
 from croniter import croniter
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3
+from mutagen import File as MutagenFile
 from scripts.timer import get_next_run_safe
 from scripts.runner import run_scheduler_stream
 from scripts.scheduler import log_run
@@ -22,6 +23,7 @@ AUTH_DIR = f"{DATA_DIR}/auth"
 COOKIES_FILE = f"{AUTH_DIR}/cookies.txt"
 CRON_FILE   = "/etc/cron.d/ytmusic"
 CRON_SUFFIX = "root python /app/scripts/scheduler.py >> /var/log/cron.log 2>&1"
+MUSIC_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aac", ".wma"}
 
 
 from threading import Lock
@@ -59,11 +61,16 @@ def index():
     )
 
 
+def _is_music(filename):
+    return os.path.splitext(filename)[1].lower() in MUSIC_EXTENSIONS
+
+
 def get_files():
     result = []
     for root, _, files in os.walk(DOWNLOAD_DIR):
         for f in files:
-            result.append(os.path.join(root, f).replace("/app/data/downloads/", ""))
+            if _is_music(f):
+                result.append(os.path.join(root, f).replace("/app/data/downloads/", ""))
     return result
 
 
@@ -71,6 +78,8 @@ def get_download_size():
     total = 0
     for root, _, files in os.walk(DOWNLOAD_DIR):
         for f in files:
+            if not _is_music(f):
+                continue
             try:
                 total += os.path.getsize(os.path.join(root, f))
             except OSError:
@@ -250,7 +259,7 @@ def downloads_metadata():
     all_files = []
     for root, _, files in os.walk(DOWNLOAD_DIR):
         for fname in files:
-            if fname.lower().endswith(".mp3"):
+            if _is_music(fname):
                 fpath = os.path.join(root, fname)
                 rel   = fpath[len(DOWNLOAD_DIR):].lstrip("/")
                 all_files.append((rel, fpath))
@@ -264,13 +273,18 @@ def downloads_metadata():
     for rel, fpath in page_files:
         info = {"path": rel}
         try:
-            audio = MP3(fpath)
-            tags  = audio.tags
-            info["title"]    = str(tags["TIT2"]) if tags and "TIT2" in tags else ""
-            info["artist"]   = str(tags["TPE1"]) if tags and "TPE1" in tags else ""
-            info["album"]    = str(tags["TALB"]) if tags and "TALB" in tags else ""
-            info["duration"] = int(audio.info.length)
-            info["has_art"]  = tags is not None and any(k.startswith("APIC") for k in tags)
+            audio = MutagenFile(fpath, easy=True)
+            if audio is not None:
+                info["title"]    = audio.get("title",  [""])[0]
+                info["artist"]   = audio.get("artist", [""])[0]
+                info["album"]    = audio.get("album",  [""])[0]
+                info["duration"] = int(audio.info.length)
+            # cover art: ID3-tagged files only (MP3/AIFF)
+            try:
+                tags = ID3(fpath)
+                info["has_art"] = any(k.startswith("APIC") for k in tags)
+            except Exception:
+                info["has_art"] = False
         except Exception:
             pass
         try:
