@@ -436,6 +436,9 @@
     const PATH_PLAY = "M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 010 1.972l-11.54 6.347c-.75.412-1.667-.13-1.667-.986V5.653z";
     const PATH_STOP = "M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z";
 
+    const CLEAR_BTN_CLASS_ON  = 'w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2';
+    const CLEAR_BTN_CLASS_OFF = 'w-full px-3 py-2 rounded-lg bg-gray-800 text-xs font-medium text-gray-600 flex items-center gap-2 cursor-not-allowed opacity-40';
+
     async function updateRunStopButton() {
         try {
             const data = await fetch("/download-status").then(r => r.json());
@@ -446,6 +449,10 @@
                 fetchDownloadPage(dlCurrentPage);
             }
             _prevRunning = running;
+            const clearBtn = document.getElementById('clear-btn');
+            clearBtn.disabled  = running;
+            clearBtn.className = running ? CLEAR_BTN_CLASS_OFF : CLEAR_BTN_CLASS_ON;
+            if (running) closeClearMenu();
             if (running) {
                 runStopForm.action = "/stop-now";
                 runStopBtn.className = "w-full px-3 py-2 rounded-lg bg-green-700 hover:bg-red-700 text-xs font-semibold transition-colors flex items-center gap-2";
