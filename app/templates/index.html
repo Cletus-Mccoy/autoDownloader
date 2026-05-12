@@ -11,6 +11,24 @@
         ::-webkit-scrollbar-track { background: #1f2937; }
         ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+
+        /* Clear dropdown */
+        #clear-menu {
+            transition: opacity .18s cubic-bezier(.16,1,.3,1), transform .18s cubic-bezier(.16,1,.3,1);
+        }
+        .clear-item {
+            display: flex; align-items: center; gap: 10px;
+            width: 100%; padding: 7px 8px; border-radius: 8px;
+            transition: background .1s ease; text-align: left; cursor: pointer;
+        }
+        .clear-item:hover { background: rgba(255,255,255,0.055); }
+        .clear-item:hover .clear-item-label { color: #f1f5f9; }
+        .clear-item-icon {
+            width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            transition: background .1s ease;
+        }
+        .clear-item:hover .clear-item-icon { filter: brightness(1.2); }
     </style>
 </head>
 
@@ -55,32 +73,80 @@
                 <span id="global-refresh-indicator" class="text-gray-600 text-xs">off</span>
             </button>
             <!-- Clear dropdown -->
-            <div class="relative" id="clear-dropdown-root"
-                onmouseenter="openClearMenu()" onmouseleave="closeClearMenu()">
-                <button type="button"
-                    class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center justify-center gap-2">
-                    🧹 Clear
-                    <svg id="clear-chevron" class="w-3 h-3 text-gray-500 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <div class="relative" id="clear-dropdown-root">
+                <button type="button" id="clear-btn" onclick="toggleClearMenu()"
+                    aria-expanded="false" aria-haspopup="true"
+                    class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2">
+                    <svg class="w-3.5 h-3.5 text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    <span class="flex-1 text-center">Clear</span>
+                    <svg id="clear-chevron" class="w-3 h-3 text-gray-600 flex-shrink-0 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
                     </svg>
                 </button>
-                <div id="clear-menu" class="absolute left-0 right-0 top-full bg-gray-800 border border-gray-700 rounded-lg overflow-hidden opacity-0 pointer-events-none transition-opacity duration-150 z-20">
-                    <button type="button" onclick="clearAction('all')"
-                        class="w-full px-3 py-2 text-left text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors">
-                        All
-                    </button>
-                    <button type="button" onclick="clearAction('/clear-downloads')"
-                        class="w-full px-3 py-2 text-left text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors border-t border-gray-700/50">
-                        Downloads
-                    </button>
-                    <button type="button" onclick="clearAction('/clear-logs')"
-                        class="w-full px-3 py-2 text-left text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors border-t border-gray-700/50">
-                        Logs
-                    </button>
-                    <button type="button" onclick="clearAction('/clear-runs')"
-                        class="w-full px-3 py-2 text-left text-xs text-gray-300 hover:bg-gray-700 hover:text-white transition-colors border-t border-gray-700/50">
-                        Runs
-                    </button>
+
+                <div id="clear-menu"
+                     class="absolute left-0 right-0 z-30 mt-2 rounded-xl overflow-hidden opacity-0 pointer-events-none"
+                     style="background:rgba(9,13,23,0.97);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.07);box-shadow:0 8px 32px rgba(0,0,0,0.6),0 0 0 1px rgba(99,102,241,0.08);transform:translateY(-6px) scale(0.96)">
+
+                    <div class="px-3 pt-3 pb-1.5">
+                        <span class="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Clear data</span>
+                    </div>
+
+                    <div class="px-1.5 pb-1.5 space-y-0.5">
+                        <button type="button" onclick="clearAction('all')" class="clear-item">
+                            <div class="clear-item-icon" style="background:rgba(239,68,68,0.13);color:#f87171">
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-xs font-medium text-gray-200 clear-item-label">All data</div>
+                                <div class="text-[10px] text-gray-600 mt-0.5">Downloads, logs &amp; runs</div>
+                            </div>
+                        </button>
+
+                        <button type="button" onclick="clearAction('/clear-downloads')" class="clear-item">
+                            <div class="clear-item-icon" style="background:rgba(251,191,36,0.11);color:#fbbf24">
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                </svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-xs font-medium text-gray-200 clear-item-label">Downloads</div>
+                                <div class="text-[10px] text-gray-600 mt-0.5">All audio files</div>
+                            </div>
+                        </button>
+
+                        <button type="button" onclick="clearAction('/clear-logs')" class="clear-item">
+                            <div class="clear-item-icon" style="background:rgba(99,102,241,0.13);color:#818cf8">
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 4H7a2 2 0 01-2-2V5a2 2 0 012-2h5l5 5v14a2 2 0 01-2 2z"/>
+                                </svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-xs font-medium text-gray-200 clear-item-label">Logs</div>
+                                <div class="text-[10px] text-gray-600 mt-0.5">All log files</div>
+                            </div>
+                        </button>
+
+                        <button type="button" onclick="clearAction('/clear-runs')" class="clear-item">
+                            <div class="clear-item-icon" style="background:rgba(168,85,247,0.11);color:#c084fc">
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="text-xs font-medium text-gray-200 clear-item-label">Runs</div>
+                                <div class="text-[10px] text-gray-600 mt-0.5">Run history</div>
+                            </div>
+                        </button>
+                    </div>
+
+                    <div class="px-3 py-2" style="border-top:1px solid rgba(255,255,255,0.05)">
+                        <p class="text-[10px] text-gray-700">This action cannot be undone</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -296,15 +362,33 @@
     };
 
     function openClearMenu() {
-        document.getElementById('clear-menu').classList.replace('opacity-0', 'opacity-100');
-        document.getElementById('clear-menu').classList.replace('pointer-events-none', 'pointer-events-auto');
-        document.getElementById('clear-chevron').style.transform = 'rotate(180deg)';
+        const menu    = document.getElementById('clear-menu');
+        const chevron = document.getElementById('clear-chevron');
+        const btn     = document.getElementById('clear-btn');
+        menu.style.opacity      = '1';
+        menu.style.transform    = 'translateY(0) scale(1)';
+        menu.style.pointerEvents = 'auto';
+        btn.setAttribute('aria-expanded', 'true');
+        chevron.style.transform = 'rotate(180deg)';
     }
     function closeClearMenu() {
-        document.getElementById('clear-menu').classList.replace('opacity-100', 'opacity-0');
-        document.getElementById('clear-menu').classList.replace('pointer-events-auto', 'pointer-events-none');
-        document.getElementById('clear-chevron').style.transform = '';
+        const menu    = document.getElementById('clear-menu');
+        const chevron = document.getElementById('clear-chevron');
+        const btn     = document.getElementById('clear-btn');
+        menu.style.opacity      = '0';
+        menu.style.transform    = 'translateY(-6px) scale(0.96)';
+        menu.style.pointerEvents = 'none';
+        btn.setAttribute('aria-expanded', 'false');
+        chevron.style.transform = '';
     }
+    function toggleClearMenu() {
+        document.getElementById('clear-btn').getAttribute('aria-expanded') === 'true'
+            ? closeClearMenu() : openClearMenu();
+    }
+    document.addEventListener('click', e => {
+        if (!document.getElementById('clear-dropdown-root').contains(e.target)) closeClearMenu();
+    });
+
     function postTo(action) {
         const form = document.createElement('form');
         form.method = 'post';
@@ -313,9 +397,9 @@
         form.submit();
     }
     async function clearAction(action) {
+        closeClearMenu();
         const label = CLEAR_LABELS[action] ?? action;
         if (!confirm(`Clear ${label}?\n\nThis cannot be undone.`)) return;
-        closeClearMenu();
         if (action === 'all') {
             await Promise.all([
                 fetch('/clear-downloads', { method: 'POST' }),
