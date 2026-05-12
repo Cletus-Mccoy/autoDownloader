@@ -192,10 +192,18 @@ def get_log(name):
 
 @app.route("/api/runs")
 def api_runs():
-    runs = load_runs()
-    if runs:
-        return jsonify(runs)
-    # Fallback: synthesise entries from log files on disk
+    # If runs.json exists and is valid JSON, use it (even if empty — user may have cleared it)
+    if os.path.exists(RUNS_FILE):
+        try:
+            with open(RUNS_FILE) as f:
+                runs = json.load(f)
+            for run in runs:
+                if "log" in run:
+                    run.setdefault("log_name", os.path.basename(run["log"]))
+            return jsonify(runs)
+        except (json.JSONDecodeError, ValueError):
+            pass
+    # Fallback only when file is missing or corrupt: synthesise from log files on disk
     if not os.path.exists(LOG_DIR):
         return jsonify([])
     files = sorted(

@@ -88,10 +88,10 @@
 
     <!-- Main Content -->
     <main class="flex-1 p-8 overflow-auto">
-        <div class="grid gap-4 h-full" style="grid-template-columns: 2fr 1fr">
+        <div class="grid gap-4" style="grid-template-columns: minmax(0,2fr) minmax(0,1fr)">
 
             <!-- LEFT: wide column — Download list + Log Viewer -->
-            <div class="flex flex-col gap-4">
+            <div class="flex flex-col gap-4 min-w-0">
 
                 <!-- Downloaded Files (half height) -->
                 <div class="bg-gray-900 border border-gray-800 rounded-xl flex flex-col overflow-hidden" style="max-height:48vh">
@@ -138,9 +138,14 @@
                                 class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium transition-colors">
                                 Refresh
                             </button>
+                            <button id="autoscroll-btn" onclick="toggleAutoscroll()"
+                                class="px-3 py-2 rounded-lg bg-indigo-700 text-xs font-medium transition-colors text-white"
+                                title="Auto-scroll to bottom">
+                                ↓ Auto
+                            </button>
                         </div>
                         <pre id="log-content"
-                            class="flex-1 min-h-0 rounded-lg p-4 overflow-y-auto text-xs font-mono leading-relaxed text-green-400"
+                            class="flex-1 min-h-0 rounded-lg p-4 overflow-y-auto overflow-x-hidden text-xs font-mono leading-relaxed text-green-400 whitespace-pre-wrap break-all"
                             style="background-color:#060b14">Select a log to view...</pre>
                     </div>
                 </div>
@@ -148,7 +153,7 @@
             </div>
 
             <!-- RIGHT: narrow column — info cards + Last Runs -->
-            <div class="flex flex-col gap-4">
+            <div class="flex flex-col gap-4 min-w-0">
 
                 <!-- Next scheduled run -->
                 <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
@@ -433,12 +438,30 @@
         } catch (_) {}
     }
 
+    let logAutoscroll = true;
+
+    function toggleAutoscroll() {
+        logAutoscroll = !logAutoscroll;
+        const btn = document.getElementById('autoscroll-btn');
+        btn.className = logAutoscroll
+            ? 'px-3 py-2 rounded-lg bg-indigo-700 text-xs font-medium transition-colors text-white'
+            : 'px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-400';
+        btn.textContent = logAutoscroll ? '↓ Auto' : '↓ Off';
+        if (logAutoscroll) scrollLogToBottom();
+    }
+
+    function scrollLogToBottom() {
+        const el = document.getElementById('log-content');
+        el.scrollTop = el.scrollHeight;
+    }
+
     async function fetchLog() {
         const select = document.getElementById('log-select');
         if (!select.value) return;
         try {
             const text = await fetch(`/logs/${select.value}`).then(r => r.text());
             document.getElementById('log-content').textContent = text || 'Log is empty.';
+            if (logAutoscroll) scrollLogToBottom();
         } catch (_) {}
     }
 
