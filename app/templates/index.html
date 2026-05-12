@@ -7,118 +7,121 @@
 
 <body class="bg-gray-900 text-white p-6">
 
-<h1 class="text-3xl font-bold mb-6">🎵 YouTube Music Downloader</h1>
 
-<!-- AUTH STATUS + CONTROLS -->
-<div class="mb-6 flex items-center gap-4">
-    <div id="auth-badge" class="text-sm px-3 py-1 rounded-full font-medium"></div>
-    <button id="auth-btn" onclick="openAuthModal()"
-        class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded text-sm hidden">
-        🔐 Login
-    </button>
-    <form method="post" action="/auth/revoke" id="revoke-form" class="hidden">
-        <button class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-sm">
-            Logout
-        </button>
-    </form>
+
+<div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <aside class="w-64 bg-gray-900 p-6 flex flex-col gap-8 border-r border-gray-800">
+        <div>
+            <h1 class="text-2xl font-bold tracking-tight mb-2">🎵 YT Music Downloader</h1>
+            <div id="auth-badge" class="text-xs px-3 py-1 rounded-full font-medium mb-2"></div>
+            <button id="auth-btn" onclick="openAuthModal()"
+                class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded text-xs w-full hidden mb-2">
+                🔐 Login
+            </button>
+            <form method="post" action="/auth/revoke" id="revoke-form" class="hidden mb-2">
+                <button class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-xs w-full">
+                    Logout
+                </button>
+            </form>
+        </div>
+        <div class="flex flex-col gap-2">
+            <form method="post" action="/run-now">
+                <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded w-full font-semibold">
+                    ▶ Run Now
+                </button>
+            </form>
+            <form method="post" action="/stop-now">
+                <button class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded w-full font-semibold">
+                    ⏹ Stop Run
+                </button>
+            </form>
+            <form method="post" action="/clear-logs">
+                <button class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded w-full font-semibold">
+                    🧹 Clear Logs
+                </button>
+            </form>
+            <form method="post" action="/clear-downloads">
+                <button class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded w-full font-semibold">
+                    🧹 Clear Downloads
+                </button>
+            </form>
+        </div>
+        <div class="mt-8">
+            <div id="download-status-badge" class="text-xs text-gray-400"></div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 p-10 flex flex-col gap-8">
+        <!-- Next Run Card -->
+        <section class="bg-gray-900 rounded-xl p-6 shadow-lg max-w-xl mb-4">
+            <div class="text-xs text-gray-400 mb-1">Next scheduled run</div>
+            {% if next_run %}
+                <div class="text-lg font-semibold">{{ next_run }}</div>
+            {% else %}
+                <div class="text-red-400">Unknown schedule</div>
+            {% endif %}
+            {% if delta %}
+                <div class="text-xs text-gray-400">In {{ delta }}</div>
+            {% endif %}
+        </section>
+
+        <!-- Downloads Card -->
+        <section class="bg-gray-900 rounded-xl p-6 shadow-lg max-w-xl mb-4">
+            <h2 class="text-lg font-bold mb-2">Downloads</h2>
+            <div>
+                {% if download_size %}
+                    <span class="text-xs text-gray-400">Total size: {{ download_size }}</span>
+                {% else %}
+                    <span class="text-xs text-gray-400">Could not determine folder size</span>
+                {% endif %}
+            </div>
+            <div class="bg-gray-800 p-3 rounded max-h-40 overflow-y-auto text-xs mt-2">
+                {% for file in downloads %}
+                    {{ file }}<br>
+                {% endfor %}
+            </div>
+        </section>
+
+        <!-- Last Runs Card -->
+        <section class="bg-gray-900 rounded-xl p-6 shadow-lg max-w-3xl mb-4">
+            <h2 class="text-lg font-bold mb-2">Last Runs</h2>
+            <table class="w-full text-xs">
+                <thead>
+                    <tr class="border-b border-gray-700">
+                        <th class="p-2 text-left">Timestamp</th>
+                        <th class="p-2 text-left">Status</th>
+                        <th class="p-2 text-left">Log</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for run in runs %}
+                    <tr class="border-b border-gray-800">
+                        <td class="p-2">{{ run.timestamp }}</td>
+                        <td class="p-2 {% if run.status == 'success' %}text-green-500{% else %}text-red-500{% endif %}">
+                            {{ run.status }}
+                        </td>
+                        <td class="p-2">
+                            <a href="/logs/{{ run.log_name }}" class="text-blue-400 underline">view</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Log Viewer Card -->
+        <section class="bg-gray-900 rounded-xl p-6 shadow-lg max-w-3xl">
+            <h2 class="text-lg font-bold mb-2">Log Viewer</h2>
+            <div class="flex gap-2 mb-2">
+                <select id="log-select" class="bg-gray-800 text-xs rounded p-2 flex-1"></select>
+                <button onclick="refreshLog()" class="bg-blue-700 hover:bg-blue-800 px-3 py-2 rounded text-xs">Refresh</button>
+            </div>
+            <pre id="log-content" class="bg-black text-green-400 rounded p-3 max-h-64 overflow-y-auto text-xs">Select a log to view...</pre>
+        </section>
+    </main>
 </div>
-
-<!-- RUN BUTTON -->
-<div class="mb-6">
-    <form method="post" action="/run-now">
-        <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
-            ▶ Run Now
-        </button>
-    </form> 
-    <div id="download-status-badge" class="text-sm text-gray-400 mt-2"></div>
-    <script>
-        async function updateDownloadStatus() {
-            const response = await fetch("/download-status", { method: "POST" });
-            const data = await response.json();
-            const badge = document.getElementById("download-status-badge");
-            if (data.status === "running") {
-                badge.textContent = "📥 Downloading...";
-                badge.className = "text-sm text-green-500 mt-2";
-            } else {
-                badge.textContent = "✅ Idle";
-                badge.className = "text-sm text-gray-400 mt-2";
-            }
-        }
-        setInterval(updateDownloadStatus, 5000);
-        updateDownloadStatus();
-    </script>
-    </form>
-    <form method="post" action="/stop-now">
-        <button class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded">
-            ⏹ Stop Run
-        </button>
-    </form>
-    <form method="post" action="/clear-logs">
-        <button class="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded">
-            🧹 Clear Logs
-        </button>
-    </form>
-    <form method="post" action="/clear-downloads">
-        <button class="bg-gray-600 hover:bg-gray-500 px-4 py-2 rounded">
-            🧹 Clear Downloads
-        </button>
-    </form>
-</div>
-
-<!-- NEXT RUN -->
-<div class="mb-6 bg-gray-800 p-4 rounded">
-    <div class="text-sm text-gray-400">Next scheduled run</div>
-    {% if next_run %}
-        <div class="text-lg font-semibold">{{ next_run }}</div>
-    {% else %}
-        <div class="text-red-400">Unknown schedule</div>
-    {% endif %}
-    {% if delta %}
-        <div class="text-sm text-gray-400">In {{ delta }}</div>
-    {% endif %}
-</div>
-
-<!-- DOWNLOADS -->
-<h2 class="text-xl mt-8 mb-2">Downloads</h2>
-<div showing download folder size>
-    {% if download_size %}
-        <span class="text-sm text-gray-400">Total size: {{ download_size }}</span>
-    {% else %}
-        <span class="text-sm text-gray-400">Could not determine folder size</span>
-    {% endif %}
-</div>
-<div class="bg-gray-800 p-3 rounded max-h-60 overflow-y-scroll text-sm">
-    {% for file in downloads %}
-        {{ file }}<br>
-    {% endfor %}
-</div>
-
-<!-- RUNS -->
-<h2 class="text-xl mb-2">Last Runs</h2>
-
-<table class="w-full text-sm">
-    <thead>
-        <tr class="border-b border-gray-700">
-            <th class="p-2 text-left">Timestamp</th>
-            <th class="p-2 text-left">Status</th>
-            <th class="p-2 text-left">Log</th>
-        </tr>
-    </thead>
-    <tbody>
-    {% for run in runs %}
-        <tr class="border-b border-gray-800">
-            <td class="p-2">{{ run.timestamp }}</td>
-            <td class="p-2 {% if run.status == 'success' %}text-green-500{% else %}text-red-500{% endif %}">
-                {{ run.status }}
-            </td>
-            <td class="p-2">
-                <a href="/logs/{{ run.log_name }}" class="text-blue-400 underline">view</a>
-            </td>
-        </tr>
-    {% endfor %}
-    </tbody>
-</table>
-
 
 <!-- AUTH MODAL -->
 <div id="auth-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center hidden z-50">
@@ -127,7 +130,6 @@
             <h2 class="text-xl font-bold">🔐 Authenticate with YouTube</h2>
             <button onclick="closeAuthModal()" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
         </div>
-
         <ol class="text-sm text-gray-300 space-y-2 mb-5">
             <li><span class="text-white font-semibold">1.</span> Install the
                 <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
@@ -141,7 +143,6 @@
             <li><span class="text-white font-semibold">3.</span> Click the extension icon and export cookies for <code class="bg-gray-700 px-1 rounded">music.youtube.com</code>.</li>
             <li><span class="text-white font-semibold">4.</span> Upload the downloaded <code class="bg-gray-700 px-1 rounded">cookies.txt</code> file below.</li>
         </ol>
-
         <form method="post" action="/auth/upload" enctype="multipart/form-data" class="space-y-3">
             <input type="file" name="cookies" accept=".txt"
                 class="block w-full text-sm text-gray-300 bg-gray-900 border border-gray-600 rounded p-2
@@ -155,22 +156,37 @@
     </div>
 </div>
 
-
 <script>
+    // Download status badge
+    async function updateDownloadStatus() {
+        const response = await fetch("/download-status", { method: "POST" });
+        const data = await response.json();
+        const badge = document.getElementById("download-status-badge");
+        if (data.status === "running") {
+            badge.textContent = "📥 Downloading...";
+            badge.className = "text-xs text-green-500";
+        } else {
+            badge.textContent = "✅ Idle";
+            badge.className = "text-xs text-gray-400";
+        }
+    }
+    setInterval(updateDownloadStatus, 5000);
+    updateDownloadStatus();
+
+    // Auth badge
     fetch('/auth/status')
         .then(r => r.json())
         .then(data => {
             const badge = document.getElementById('auth-badge');
             const loginBtn = document.getElementById('auth-btn');
             const revokeForm = document.getElementById('revoke-form');
-
             if (data.authenticated) {
                 badge.textContent = '✓ Authenticated';
-                badge.className = 'text-sm px-3 py-1 rounded-full font-medium bg-green-800 text-green-300';
+                badge.className = 'text-xs px-3 py-1 rounded-full font-medium bg-green-800 text-green-300';
                 revokeForm.classList.remove('hidden');
             } else {
                 badge.textContent = '✗ Not authenticated';
-                badge.className = 'text-sm px-3 py-1 rounded-full font-medium bg-red-900 text-red-300';
+                badge.className = 'text-xs px-3 py-1 rounded-full font-medium bg-red-900 text-red-300';
                 loginBtn.classList.remove('hidden');
             }
         });
@@ -178,11 +194,44 @@
     function openAuthModal() {
         document.getElementById('auth-modal').classList.remove('hidden');
     }
-
     function closeAuthModal() {
         document.getElementById('auth-modal').classList.add('hidden');
     }
+
+    // Log viewer logic
+    async function fetchLogList() {
+        const res = await fetch('/api/runs');
+        const runs = await res.json();
+        const select = document.getElementById('log-select');
+        select.innerHTML = '';
+        runs.forEach(run => {
+            if (run.log_name) {
+                const opt = document.createElement('option');
+                opt.value = run.log_name;
+                opt.textContent = run.log_name;
+                select.appendChild(opt);
+            }
+        });
+        if (select.options.length > 0) {
+            select.selectedIndex = 0;
+            fetchLog();
+        }
+    }
+    async function fetchLog() {
+        const select = document.getElementById('log-select');
+        const log = select.value;
+        if (!log) return;
+        const res = await fetch(`/logs/${log}`);
+        const text = await res.text();
+        document.getElementById('log-content').textContent = text || 'Log is empty.';
+    }
+    function refreshLog() {
+        fetchLog();
+    }
+    document.getElementById('log-select').addEventListener('change', fetchLog);
+    window.addEventListener('DOMContentLoaded', fetchLogList);
 </script>
+
 
 </body>
 </html>
