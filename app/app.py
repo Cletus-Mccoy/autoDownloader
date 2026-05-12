@@ -272,6 +272,12 @@ def api_runs():
     return jsonify(synthetic)
 
 
+@app.route("/api/next-run")
+def api_next_run():
+    next_run, delta = get_next_run_safe()
+    return jsonify({"next_run": next_run, "delta": delta})
+
+
 @app.route("/api/logs")
 def api_logs():
     if not os.path.exists(LOG_DIR):

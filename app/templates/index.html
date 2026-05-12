@@ -243,14 +243,15 @@
                 <!-- Next scheduled run -->
                 <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex-shrink-0">
                     <div class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Next scheduled run</div>
-                    {% if next_run %}
-                        <div class="text-base font-semibold text-white">{{ next_run }}</div>
-                        {% if delta %}
-                            <div class="text-xs text-indigo-400 mt-1">in {{ delta }}</div>
+                    <div id="next-run-content">
+                        {% if next_run %}
+                            <div id="next-run-time" class="text-base font-semibold text-white">{{ next_run }}</div>
+                            <div id="next-run-delta" class="text-xs text-indigo-400 mt-1">{% if delta %}in {{ delta }}{% endif %}</div>
+                        {% else %}
+                            <div id="next-run-time" class="text-sm text-red-400">Unknown schedule</div>
+                            <div id="next-run-delta"></div>
                         {% endif %}
-                    {% else %}
-                        <div class="text-sm text-red-400">Unknown schedule</div>
-                    {% endif %}
+                    </div>
                 </div>
 
                 <!-- Last Runs -->
@@ -392,8 +393,9 @@
         chevron.style.transform = '';
     }
     function toggleClearMenu() {
-        document.getElementById('clear-btn').getAttribute('aria-expanded') === 'true'
-            ? closeClearMenu() : openClearMenu();
+        const btn = document.getElementById('clear-btn');
+        if (btn.disabled) return;
+        btn.getAttribute('aria-expanded') === 'true' ? closeClearMenu() : openClearMenu();
     }
     document.addEventListener('click', e => {
         if (!document.getElementById('clear-dropdown-root').contains(e.target)) closeClearMenu();
@@ -593,6 +595,24 @@
 
     document.getElementById('log-select').addEventListener('change', fetchLog);
 
+    // ── Next scheduled run ───────────────────────────────────────────
+    async function refreshNextRun() {
+        try {
+            const data = await fetch('/api/next-run').then(r => r.json());
+            const timeEl  = document.getElementById('next-run-time');
+            const deltaEl = document.getElementById('next-run-delta');
+            if (data.next_run) {
+                timeEl.textContent = data.next_run;
+                timeEl.className   = 'text-base font-semibold text-white';
+                deltaEl.textContent = data.delta ? `in ${data.delta}` : '';
+            } else {
+                timeEl.textContent = 'Unknown schedule';
+                timeEl.className   = 'text-sm text-red-400';
+                deltaEl.textContent = '';
+            }
+        } catch (_) {}
+    }
+
     // ── Downloads summary ────────────────────────────────────────────
     async function refreshDownloadSummary() {
         try {
@@ -694,6 +714,7 @@
             if (res.ok) {
                 status.textContent = '✓ Saved';
                 status.className   = 'text-xs text-green-400';
+                refreshNextRun();
                 setTimeout(closeScheduleModal, 1200);
             } else {
                 status.textContent = '✗ ' + (data.error ?? 'Error');
