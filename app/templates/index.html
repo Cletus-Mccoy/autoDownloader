@@ -171,13 +171,21 @@
                     <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
                 </svg>
             </button>
-            <div id="dl-files-body" class="px-5 pb-5">
-                <div id="download-list" class="rounded-lg p-3 max-h-36 overflow-y-auto text-xs text-gray-400 space-y-0.5 font-mono" style="background-color:#060b14">
-                    {% for file in downloads %}
-                        <div class="truncate hover:text-gray-200 transition-colors">{{ file }}</div>
-                    {% else %}
-                        <div class="text-gray-600">No files yet.</div>
-                    {% endfor %}
+            <div id="dl-files-body" class="px-5 pb-4">
+                <div id="download-list" class="divide-y divide-gray-800/60">
+                    <div class="py-4 text-xs text-gray-600">Loading...</div>
+                </div>
+                <!-- Pagination -->
+                <div id="dl-pagination" class="flex items-center justify-between pt-3 mt-1 border-t border-gray-800">
+                    <button id="dl-prev" onclick="dlChangePage(-1)"
+                        class="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                        ← Prev
+                    </button>
+                    <span id="dl-page-info" class="text-xs text-gray-500"></span>
+                    <button id="dl-next" onclick="dlChangePage(1)"
+                        class="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                        Next →
+                    </button>
                 </div>
             </div>
         </div>
@@ -411,18 +419,14 @@
 
     document.getElementById('log-select').addEventListener('change', fetchLog);
 
-    // ── Downloads auto-refresh ───────────────────────────────────────
+    // ── Downloads summary auto-refresh ──────────────────────────────
     let autoRefreshInterval = null;
 
-    async function refreshDownloads() {
+    async function refreshDownloadSummary() {
         try {
             const data = await fetch('/api/downloads').then(r => r.json());
-            document.getElementById('download-size').textContent  = data.size  ?? '—';
+            document.getElementById('download-size').textContent  = data.size ?? '—';
             document.getElementById('download-count').textContent = `${data.files.length} file(s)`;
-            const list = document.getElementById('download-list');
-            list.innerHTML = data.files.length
-                ? data.files.map(f => `<div class="truncate hover:text-gray-200 transition-colors">${f}</div>`).join('')
-                : '<div class="text-gray-600">No files yet.</div>';
         } catch (_) {}
     }
 
@@ -431,14 +435,72 @@
         if (autoRefreshInterval) {
             clearInterval(autoRefreshInterval);
             autoRefreshInterval = null;
-            btn.className = "text-xs px-2 py-1 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-400 transition-colors font-mono";
+            btn.className   = "text-xs px-2 py-1 rounded-md bg-gray-800 hover:bg-gray-700 text-gray-400 transition-colors font-mono";
             btn.textContent = "↻ Auto";
         } else {
-            refreshDownloads();
-            autoRefreshInterval = setInterval(refreshDownloads, 5000);
-            btn.className = "text-xs px-2 py-1 rounded-md bg-indigo-700 hover:bg-indigo-600 text-white transition-colors font-mono";
+            refreshDownloadSummary();
+            autoRefreshInterval = setInterval(refreshDownloadSummary, 5000);
+            btn.className   = "text-xs px-2 py-1 rounded-md bg-indigo-700 hover:bg-indigo-600 text-white transition-colors font-mono";
             btn.textContent = "↻ On";
         }
+    }
+
+    // ── Paginated track list ─────────────────────────────────────────
+    let dlCurrentPage = 1;
+    const DL_LIMIT    = 20;
+
+    function fmtDuration(secs) {
+        if (!secs) return '';
+        const m = Math.floor(secs / 60), s = secs % 60;
+        return `${m}:${String(s).padStart(2, '0')}`;
+    }
+    function fmtSize(bytes) {
+        if (!bytes) return '';
+        if (bytes < 1048576)  return (bytes / 1024).toFixed(1)    + ' KB';
+        if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+        return (bytes / 1073741824).toFixed(2) + ' GB';
+    }
+
+    async function fetchDownloadPage(page) {
+        const list = document.getElementById('download-list');
+        list.innerHTML = '<div class="py-4 text-xs text-gray-600">Loading...</div>';
+        try {
+            const data = await fetch(`/api/downloads/metadata?page=${page}&limit=${DL_LIMIT}`).then(r => r.json());
+            dlCurrentPage = data.page;
+
+            if (!data.files.length) {
+                list.innerHTML = '<div class="py-4 text-xs text-gray-600">No files yet.</div>';
+            } else {
+                list.innerHTML = data.files.map(f => {
+                    const art = f.has_art
+                        ? `<img src="/api/downloads/art/${encodeURIComponent(f.path)}" class="w-11 h-11 rounded object-cover flex-shrink-0 bg-gray-800" loading="lazy" onerror="this.style.display='none'">`
+                        : `<div class="w-11 h-11 rounded flex-shrink-0 bg-gray-800 flex items-center justify-center text-gray-600 text-lg">♪</div>`;
+                    const folder = f.path.includes('/') ? f.path.split('/')[0].replace(/_/g, ' ') : '';
+                    const meta   = [f.artist, folder].filter(Boolean).join(' · ');
+                    return `<div class="flex items-center gap-3 py-2.5 hover:bg-gray-800/30 rounded-lg px-1 transition-colors -mx-1">
+                        ${art}
+                        <div class="min-w-0 flex-1">
+                            <div class="text-xs font-medium text-gray-200 truncate">${f.title || f.path.split('/').pop().replace(/\.mp3$/i,'')}</div>
+                            <div class="text-xs text-gray-500 truncate mt-0.5">${meta}</div>
+                        </div>
+                        <div class="flex-shrink-0 text-right">
+                            <div class="text-xs text-gray-500">${fmtDuration(f.duration)}</div>
+                            <div class="text-xs text-gray-700 mt-0.5">${fmtSize(f.size)}</div>
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+
+            document.getElementById('dl-page-info').textContent = `Page ${data.page} of ${data.pages}  (${data.total} tracks)`;
+            document.getElementById('dl-prev').disabled = data.page <= 1;
+            document.getElementById('dl-next').disabled = data.page >= data.pages;
+        } catch (_) {
+            list.innerHTML = '<div class="py-4 text-xs text-red-400">Failed to load files.</div>';
+        }
+    }
+
+    function dlChangePage(delta) {
+        fetchDownloadPage(dlCurrentPage + delta);
     }
 
     // ── Collapsible cards ────────────────────────────────────────────
@@ -500,6 +562,7 @@
         loadCron();
         fetchLogList();
         fetchRuns();
+        fetchDownloadPage(1);
     });
 </script>
 

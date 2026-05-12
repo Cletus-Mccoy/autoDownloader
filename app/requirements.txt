@@ -1,3 +1,4 @@
+mutagen
 dotenv
 yt-dlp[default]
 playwright
