@@ -127,8 +127,13 @@ def run_target():
     finally:
         try:
             log_run(status, log_file, trigger="manual")
-        except Exception:
-            pass
+        except Exception as log_err:
+            # write the failure into the run's own log so it's visible in the UI
+            try:
+                with open(log_file, "a") as lf:
+                    lf.write(f"\n[log_run failed: {log_err}]\n")
+            except Exception:
+                pass
         _current_proc = None
         run_active = False
 
