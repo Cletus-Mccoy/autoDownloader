@@ -5,6 +5,7 @@ import shutil
 import threading
 import subprocess
 import datetime
+from croniter import croniter
 from scripts.timer import get_next_run_safe
 from scripts.runner import run_scheduler_stream
 from scripts.scheduler import log_run
@@ -17,6 +18,7 @@ DOWNLOAD_DIR = f"{DATA_DIR}/downloads"
 LOG_DIR = f"{DATA_DIR}/logs"
 AUTH_DIR = f"{DATA_DIR}/auth"
 COOKIES_FILE = f"{AUTH_DIR}/cookies.txt"
+CRON_FILE = "/etc/cron.d/ytmusic"
 
 
 from threading import Lock
@@ -227,6 +229,39 @@ def api_logs():
 @app.route("/api/downloads")
 def api_downloads():
     return jsonify({"files": get_files(), "size": get_download_size()})
+
+
+@app.route("/api/cron", methods=["GET"])
+def get_cron():
+    try:
+        with open(CRON_FILE) as f:
+            return jsonify({"content": f.read()})
+    except Exception as e:
+        return jsonify({"content": "", "error": str(e)})
+
+
+@app.route("/api/cron", methods=["POST"])
+def set_cron():
+    content = request.json.get("content", "").strip() + "\n"
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) >= 5:
+            expr = " ".join(parts[:5])
+            try:
+                croniter(expr)
+            except Exception as e:
+                return jsonify({"error": f"Invalid cron expression '{expr}': {e}"}), 400
+            break
+    try:
+        with open(CRON_FILE, "w") as f:
+            f.write(content)
+        subprocess.run(["service", "cron", "reload"], capture_output=True)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
