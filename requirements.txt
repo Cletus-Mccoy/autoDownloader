@@ -10,3 +10,4 @@ phantomjs-binary
 selenium
 undetected-chromedriver
 dotenv
+mutagen
