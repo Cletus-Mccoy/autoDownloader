@@ -300,29 +300,31 @@ def download_art(filename):
 def get_cron():
     try:
         with open(CRON_FILE) as f:
-            return jsonify({"content": f.read()})
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 5:
+                    return jsonify({"expression": " ".join(parts[:5])})
+        return jsonify({"expression": ""})
     except Exception as e:
-        return jsonify({"content": "", "error": str(e)})
+        return jsonify({"expression": "", "error": str(e)})
 
 
 @app.route("/api/cron", methods=["POST"])
 def set_cron():
-    content = request.json.get("content", "").strip() + "\n"
-    for line in content.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split()
-        if len(parts) >= 5:
-            expr = " ".join(parts[:5])
-            try:
-                croniter(expr)
-            except Exception as e:
-                return jsonify({"error": f"Invalid cron expression '{expr}': {e}"}), 400
-            break
+    expression = request.json.get("expression", "").strip()
+    parts = expression.split()
+    if len(parts) != 5:
+        return jsonify({"error": "Must be exactly 5 fields: min hour dom mon dow"}), 400
+    try:
+        croniter(expression)
+    except Exception as e:
+        return jsonify({"error": f"Invalid expression: {e}"}), 400
     try:
         with open(CRON_FILE, "w") as f:
-            f.write(content)
+            f.write(f"{expression} {CRON_SUFFIX}\n")
         subprocess.run(["service", "cron", "reload"], capture_output=True)
     except Exception as e:
         return jsonify({"error": str(e)}), 500

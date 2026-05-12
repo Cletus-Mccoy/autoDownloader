@@ -48,6 +48,11 @@
                 class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300">
                 ⏱ Schedule
             </button>
+            <button id="global-refresh-btn" type="button" onclick="toggleGlobalRefresh()"
+                class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center justify-between">
+                <span>↻ Auto-refresh</span>
+                <span id="global-refresh-indicator" class="text-gray-600 text-xs">off</span>
+            </button>
             <!-- Clear dropdown -->
             <div class="relative" id="clear-dropdown-root"
                 onmouseenter="openClearMenu()" onmouseleave="closeClearMenu()">
@@ -257,12 +262,14 @@
             </button>
         </div>
         <p class="text-xs text-gray-500 mb-3">
-            Standard crontab format:
-            <code class="bg-gray-800 px-1.5 py-0.5 rounded font-mono">min hour dom mon dow user command</code>
+            Enter the 5-field cron schedule: <code class="bg-gray-800 px-1.5 py-0.5 rounded font-mono">min hour dom mon dow</code>
         </p>
-        <textarea id="cron-editor"
-            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-xs font-mono text-gray-200 focus:outline-none focus:border-indigo-500 transition-colors resize-none"
-            style="background-color:#060b14" rows="3" spellcheck="false">Loading...</textarea>
+        <input id="cron-editor" type="text" spellcheck="false" placeholder="0 3 * * *"
+            class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-gray-200 focus:outline-none focus:border-indigo-500 transition-colors"
+            style="background-color:#060b14">
+        <div class="mt-2 px-1 text-xs font-mono text-gray-700 truncate">
+            &lt;expression&gt;&nbsp;root python /app/scripts/scheduler.py &gt;&gt; /var/log/cron.log 2&gt;&amp;1
+        </div>
         <div class="flex items-center gap-3 mt-4">
             <button onclick="saveCron()"
                 class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold transition-colors">
@@ -279,6 +286,13 @@
 
 <script>
     // ── Clear dropdown ───────────────────────────────────────────────
+    const CLEAR_LABELS = {
+        'all':               'all data (downloads, logs and runs)',
+        '/clear-downloads':  'all downloaded files',
+        '/clear-logs':       'all log files',
+        '/clear-runs':       'all run history',
+    };
+
     function openClearMenu() {
         document.getElementById('clear-menu').classList.replace('opacity-0', 'opacity-100');
         document.getElementById('clear-menu').classList.replace('pointer-events-none', 'pointer-events-auto');
@@ -297,6 +311,9 @@
         form.submit();
     }
     async function clearAction(action) {
+        const label = CLEAR_LABELS[action] ?? action;
+        if (!confirm(`Clear ${label}?\n\nThis cannot be undone.`)) return;
+        closeClearMenu();
         if (action === 'all') {
             await Promise.all([
                 fetch('/clear-downloads', { method: 'POST' }),
@@ -531,25 +548,26 @@
     async function loadCron() {
         try {
             const data = await fetch('/api/cron').then(r => r.json());
-            document.getElementById('cron-editor').value = data.content ?? '';
+            document.getElementById('cron-editor').value = data.expression ?? '';
         } catch (_) {}
     }
 
     async function saveCron() {
-        const content = document.getElementById('cron-editor').value;
-        const status  = document.getElementById('cron-status');
+        const expression = document.getElementById('cron-editor').value.trim();
+        const status     = document.getElementById('cron-status');
         status.textContent = 'Saving…';
         status.className   = 'text-xs text-gray-400';
         try {
             const res  = await fetch('/api/cron', {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ content })
+                body:    JSON.stringify({ expression })
             });
             const data = await res.json();
             if (res.ok) {
                 status.textContent = '✓ Saved';
                 status.className   = 'text-xs text-green-400';
+                setTimeout(closeScheduleModal, 1200);
             } else {
                 status.textContent = '✗ ' + (data.error ?? 'Error');
                 status.className   = 'text-xs text-red-400';
@@ -559,6 +577,33 @@
             status.className   = 'text-xs text-red-400';
         }
         setTimeout(() => { status.textContent = ''; }, 4000);
+    }
+
+    // ── Global auto-refresh ──────────────────────────────────────────
+    let globalRefreshInterval = null;
+
+    function globalRefresh() {
+        fetchRuns();
+        fetchLogList();
+        refreshDownloadSummary();
+        updateRunStopButton();
+    }
+
+    function toggleGlobalRefresh() {
+        const btn       = document.getElementById('global-refresh-btn');
+        const indicator = document.getElementById('global-refresh-indicator');
+        if (globalRefreshInterval) {
+            clearInterval(globalRefreshInterval);
+            globalRefreshInterval = null;
+            btn.className       = 'w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center justify-between';
+            indicator.textContent = 'off';
+            indicator.className   = 'text-gray-600 text-xs';
+        } else {
+            globalRefreshInterval = setInterval(globalRefresh, 30000);
+            btn.className       = 'w-full px-3 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-xs font-medium transition-colors text-white flex items-center justify-between';
+            indicator.textContent = '30s';
+            indicator.className   = 'text-indigo-300 text-xs';
+        }
     }
 
     window.addEventListener('DOMContentLoaded', () => {
