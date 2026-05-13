@@ -12,7 +12,7 @@ from ytmusic_auth import headers_to_ytmusic, HEADERS_AUTH_FILE
 
 load_dotenv()
 
-BASE_DIR = "/app/data/downloads"
+BASE_DIR = "/app/downloads"
 SELECTION_FILE = "/app/data/playlist_selection.json"
 
 AUDIO_QUALITY = os.getenv("YT_DLP_QUALITY", "320")

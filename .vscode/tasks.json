@@ -10,14 +10,14 @@
         {
             "label": "Test App (local)",
             "type": "shell",
-            "command": ".venv/Scripts/pytest",
+            "command": "./.venv/Scripts/pytest",
             "options": { "cwd": "${workspaceFolder}/app" },
             "group": "test"
         },
         {
             "label": "Test App (container)",
             "type": "shell",
-            "command": "docker compose exec ytmusic pytest",
+            "command": "docker compose run --rm ytmusic pytest",
             "options": { "cwd": "${workspaceFolder}/app" },
             "group": "test"
         },
