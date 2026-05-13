@@ -1,0 +1,42 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Docker Image",
+            "type": "shell",
+            "command": "docker build --no-cache -t auto-downloader:latest ./app",
+            "group": "build"
+        },
+        {
+            "label": "Test App (local)",
+            "type": "shell",
+            "command": "pytest",
+            "options": { "cwd": "${workspaceFolder}/app" },
+            "group": "test"
+        },
+        {
+            "label": "Test App (container)",
+            "type": "shell",
+            "command": "docker compose -f ${workspaceFolder}/app/docker-compose.yml exec ytmusic pytest",
+            "group": "test"
+        },
+        {
+            "label": "Tag Docker Image",
+            "type": "shell",
+            "command": "export $(cat .env | xargs) && docker tag auto-downloader:latest $DOCKER_USER/auto-downloader:latest",
+            "dependsOn": "Build Docker Image"
+        },
+        {
+            "label": "Push Docker Image",
+            "type": "shell",
+            "command": "export $(cat .env | xargs) && docker push $DOCKER_USER/auto-downloader:latest",
+            "dependsOn": "Tag Docker Image"
+        },
+        {
+            "label": "Build and Push",
+            "dependsOn": ["Build Docker Image", "Tag Docker Image", "Push Docker Image"],
+            "dependsOrder": "sequence",
+            "group": "build"
+        }
+    ]
+}
