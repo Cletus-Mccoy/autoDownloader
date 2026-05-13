@@ -9,3 +9,7 @@ cookies.txt
 
 # App data
 app/data/*
+
+# Python cache files
+__pycache__/
+*.pyc

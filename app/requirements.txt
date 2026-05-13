@@ -1,4 +1,5 @@
 mutagen
+pytest
 dotenv
 yt-dlp[default]
 flask
