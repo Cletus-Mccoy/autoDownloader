@@ -21,9 +21,11 @@ DOWNLOAD_DIR = f"{DATA_DIR}/downloads"
 LOG_DIR = f"{DATA_DIR}/logs"
 AUTH_DIR = f"{DATA_DIR}/auth"
 COOKIES_FILE = f"{AUTH_DIR}/cookies.txt"
-CRON_FILE   = "/etc/cron.d/ytmusic"
-CRON_SUFFIX = "root python /app/scripts/scheduler.py >> /var/log/cron.log 2>&1"
+CRON_FILE        = "/etc/cron.d/ytmusic"
+CRON_SUFFIX      = "root python /app/scripts/scheduler.py >> /var/log/cron.log 2>&1"
+SELECTION_FILE   = f"{DATA_DIR}/playlist_selection.json"
 MUSIC_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aac", ".wma"}
+UNSUPPORTED_TITLES = {"Liked Music", "Episodes for Later"}
 
 
 def _persist_run(status, log_file, trigger="manual"):
@@ -270,6 +272,52 @@ def api_runs():
             "log_name": fname,
         })
     return jsonify(synthetic)
+
+
+@app.route("/api/playlists")
+def api_playlists():
+    if not os.path.exists(COOKIES_FILE):
+        return jsonify({"error": "not authenticated"}), 401
+    try:
+        from scripts.ytmusic_auth import cookies_to_ytmusic
+        ytmusic = cookies_to_ytmusic()
+        raw = ytmusic.get_library_playlists(limit=200)
+        playlists = []
+        for pl in raw:
+            pid   = pl.get("playlistId")
+            title = pl.get("title", "")
+            if not pid or not title:
+                continue
+            playlists.append({
+                "id":          pid,
+                "title":       title,
+                "count":       pl.get("count"),
+                "unsupported": title in UNSUPPORTED_TITLES,
+            })
+        return jsonify(playlists)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/playlists/selection", methods=["GET"])
+def get_playlist_selection():
+    try:
+        with open(SELECTION_FILE) as f:
+            return jsonify(json.load(f))
+    except Exception:
+        return jsonify({"ids": []})
+
+
+@app.route("/api/playlists/selection", methods=["POST"])
+def set_playlist_selection():
+    ids = request.json.get("ids", [])
+    tmp = SELECTION_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"ids": ids}, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, SELECTION_FILE)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/next-run")
