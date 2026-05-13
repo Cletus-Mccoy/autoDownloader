@@ -2,40 +2,46 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "Setup venv (local)",
+            "type": "shell",
+            "command": "python -m venv .venv; .venv/Scripts/pip install -r requirements.txt -q",
+            "options": { "cwd": "${workspaceFolder}/app" },
+            "group": "build"
+        },
+        {
+            "label": "Test App (local)",
+            "type": "shell",
+            "command": "./.venv/Scripts/pytest tests -v",
+            "options": { "cwd": "${workspaceFolder}/app" },
+            "dependsOn": "Setup venv (local)",
+            "dependsOrder": "sequence",
+            "group": "test"
+        },
+        {
             "label": "Build Docker Image",
             "type": "shell",
             "command": "docker build --no-cache -t auto-downloader:latest ./app",
             "group": "build"
         },
         {
-            "label": "Test App (local)",
+            "label": "Build Docker Image (cached)",
             "type": "shell",
-            "command": "./.venv/Scripts/pytest",
+            "command": "docker compose build",
             "options": { "cwd": "${workspaceFolder}/app" },
-            "group": "test"
+            "group": "build"
         },
         {
             "label": "Test App (container)",
             "type": "shell",
-            "command": "docker compose run --rm ytmusic pytest",
+            "command": "docker compose run --rm ytmusic pytest tests -v",
             "options": { "cwd": "${workspaceFolder}/app" },
+            "dependsOn": "Build Docker Image (cached)",
+            "dependsOrder": "sequence",
             "group": "test"
         },
         {
-            "label": "Tag Docker Image",
-            "type": "shell",
-            "command": "export $(cat .env | xargs) && docker tag auto-downloader:latest $DOCKER_USER/auto-downloader:latest",
-            "dependsOn": "Build Docker Image"
-        },
-        {
-            "label": "Push Docker Image",
-            "type": "shell",
-            "command": "export $(cat .env | xargs) && docker push $DOCKER_USER/auto-downloader:latest",
-            "dependsOn": "Tag Docker Image"
-        },
-        {
-            "label": "Build and Push",
-            "dependsOn": ["Build Docker Image", "Tag Docker Image", "Push Docker Image"],
+            "label": "Test and Push",
+            "dependsOn": ["Test App (container)", "Build Docker Image", "Tag Docker Image", "Push Docker Image"],
             "dependsOrder": "sequence",
             "group": "build"
         }
