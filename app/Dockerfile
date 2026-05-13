@@ -12,7 +12,7 @@ COPY ./scripts/ /app/scripts
 COPY ./tests/ /app/tests
 COPY ./pytest.ini /app/pytest.ini
 
-RUN mkdir -p /app/data/auth /app/data/downloads /app/data/logs
+RUN mkdir -p /app/data/auth /app/data/logs /app/downloads
 
 COPY ./requirements.txt /app/requirements.txt
 

@@ -18,7 +18,7 @@ app = Flask(__name__)
 
 DATA_DIR = "/app/data"
 RUNS_FILE = f"{DATA_DIR}/runs.json"
-DOWNLOAD_DIR = f"{DATA_DIR}/downloads"
+DOWNLOAD_DIR = "/app/downloads"
 LOG_DIR = f"{DATA_DIR}/logs"
 AUTH_DIR = f"{DATA_DIR}/auth"
 HEADERS_AUTH_FILE = f"{AUTH_DIR}/headers_auth.json"
@@ -99,7 +99,7 @@ def get_files():
     for root, _, files in os.walk(DOWNLOAD_DIR):
         for f in files:
             if _is_music(f):
-                result.append(os.path.join(root, f).replace("/app/data/downloads/", ""))
+                result.append(os.path.join(root, f).replace(DOWNLOAD_DIR.rstrip("/") + "/", ""))
     return result
 
 
