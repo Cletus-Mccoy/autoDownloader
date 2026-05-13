@@ -5,6 +5,7 @@ import shutil
 import threading
 import subprocess
 import datetime
+import re
 from croniter import croniter
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3
@@ -20,7 +21,7 @@ RUNS_FILE = f"{DATA_DIR}/runs.json"
 DOWNLOAD_DIR = f"{DATA_DIR}/downloads"
 LOG_DIR = f"{DATA_DIR}/logs"
 AUTH_DIR = f"{DATA_DIR}/auth"
-COOKIES_FILE = f"{AUTH_DIR}/cookies.txt"
+HEADERS_AUTH_FILE = f"{AUTH_DIR}/headers_auth.json"
 CRON_FILE        = "/etc/cron.d/ytmusic"
 CRON_SUFFIX      = "root python /app/scripts/scheduler.py >> /var/log/cron.log 2>&1"
 SELECTION_FILE   = f"{DATA_DIR}/playlist_selection.json"
@@ -213,23 +214,62 @@ def clear_downloads():
 
 @app.route("/auth/status")
 def auth_status():
-    return jsonify({"authenticated": os.path.exists(COOKIES_FILE)})
+    return jsonify({"authenticated": os.path.exists(HEADERS_AUTH_FILE)})
 
 
-@app.route("/auth/upload", methods=["POST"])
-def auth_upload():
-    f = request.files.get("cookies")
-    if not f:
-        return "No file provided", 400
+_HEADER_NAME_RE = re.compile(r"^:?[a-z][a-z0-9\-]*$")
+
+
+def _normalize_headers_raw(raw: str) -> str:
+    """Convert Chrome DevTools alternating name/value lines to 'Name: Value' format.
+
+    Chrome DevTools "Copy request headers" gives lines like:
+        header-name
+        header-value
+        ...
+    but also injects a multi-line "Decoded:" block after x-client-data that
+    shifts the naive i+=2 pairing. We detect genuine header names with a regex
+    (lowercase letters/digits/hyphens only) and skip any lines that don't match,
+    so the Decoded block is transparently ignored.
+
+    If the input already contains ': ' separators it is returned unchanged.
+    HTTP/2 pseudo-headers (:authority, :method, …) are dropped.
+    """
+    lines = [l for l in raw.splitlines() if l.strip()]
+    if any(": " in line for line in lines):
+        return raw
+    result = []
+    i = 0
+    while i < len(lines):
+        name = lines[i].strip()
+        if _HEADER_NAME_RE.match(name) and i + 1 < len(lines):
+            value = lines[i + 1].strip()
+            if not name.startswith(":"):
+                result.append(f"{name}: {value}")
+            i += 2
+        else:
+            i += 1
+    return "\n".join(result)
+
+
+@app.route("/auth/headers", methods=["POST"])
+def auth_headers():
+    headers_raw = request.form.get("headers_raw", "").strip()
+    if not headers_raw:
+        return "No headers provided", 400
     os.makedirs(AUTH_DIR, exist_ok=True)
-    f.save(COOKIES_FILE)
+    try:
+        from ytmusicapi import setup
+        setup(filepath=HEADERS_AUTH_FILE, headers_raw=_normalize_headers_raw(headers_raw))
+    except Exception as e:
+        return f"Failed to parse headers: {e}", 400
     return redirect("/")
 
 
 @app.route("/auth/revoke", methods=["POST"])
 def auth_revoke():
-    if os.path.exists(COOKIES_FILE):
-        os.remove(COOKIES_FILE)
+    if os.path.exists(HEADERS_AUTH_FILE):
+        os.remove(HEADERS_AUTH_FILE)
     return redirect("/")
 
 
@@ -276,11 +316,11 @@ def api_runs():
 
 @app.route("/api/playlists")
 def api_playlists():
-    if not os.path.exists(COOKIES_FILE):
+    if not os.path.exists(HEADERS_AUTH_FILE):
         return jsonify({"error": "not authenticated"}), 401
     try:
-        from scripts.ytmusic_auth import cookies_to_ytmusic
-        ytmusic = cookies_to_ytmusic()
+        from scripts.ytmusic_auth import headers_to_ytmusic
+        ytmusic = headers_to_ytmusic()
         raw = ytmusic.get_library_playlists(limit=200)
         playlists = []
         for pl in raw:
