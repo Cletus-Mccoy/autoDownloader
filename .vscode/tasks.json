@@ -41,8 +41,9 @@
         },
         {
             "label": "Test and Push",
-            "dependsOn": ["Test App (container)", "Build Docker Image", "Tag Docker Image", "Push Docker Image"],
-            "dependsOrder": "sequence",
+            "type": "shell",
+            "command": "docker compose build && docker compose run --rm ytmusic pytest tests -v && export $(cat ../.env | xargs) && docker build --no-cache -t auto-downloader:latest . && docker tag auto-downloader:latest $DOCKER_USER/auto-downloader:latest && docker push $DOCKER_USER/auto-downloader:latest",
+            "options": { "cwd": "${workspaceFolder}/app" },
             "group": "build"
         }
     ]
