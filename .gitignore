@@ -13,3 +13,6 @@ app/data/*
 # Python cache files
 __pycache__/
 *.pyc
+
+# Virtual environment
+.venv/
