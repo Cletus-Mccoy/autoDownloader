@@ -9,7 +9,10 @@ RUN apt-get update && apt-get install -y \
 COPY ./app.py /app/app.py
 COPY ./templates/index.html /app/templates/index.html
 COPY ./scripts/ /app/scripts
-COPY ./data/ /app/data
+COPY ./tests/ /app/tests
+COPY ./pytest.ini /app/pytest.ini
+
+RUN mkdir -p /app/data/auth /app/data/downloads /app/data/logs
 
 COPY ./requirements.txt /app/requirements.txt
 
