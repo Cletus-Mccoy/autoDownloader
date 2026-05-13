@@ -8,76 +8,89 @@ import json
 import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
-from ytmusicapi import YTMusic
+from ytmusic_auth import headers_to_ytmusic, HEADERS_AUTH_FILE
 
 load_dotenv()
 
 BASE_DIR = "/app/data/downloads"
-COOKIES_FILE = "/app/data/auth/cookies.txt"
-BROWSER_AUTH_FILE = "/app/data/browser.json"
+SELECTION_FILE = "/app/data/playlist_selection.json"
 
 AUDIO_QUALITY = os.getenv("YT_DLP_QUALITY", "320")
 AUDIO_CODEC = os.getenv("YT_DLP_CODEC", "mp3")
 NORMALIZE_AUDIO = os.getenv("YT_DLP_NORMALIZE", "false").lower() == "true"
 
+UNSUPPORTED_TITLES = {"Liked Music", "Episodes for Later"}
 
-def get_cookies():
-    if os.path.exists(COOKIES_FILE):
-        return COOKIES_FILE
-    return None
+
+def get_cookie_header():
+    try:
+        with open(HEADERS_AUTH_FILE) as f:
+            headers = json.load(f)
+        return headers.get("Cookie") or headers.get("cookie")
+    except Exception:
+        return None
+
+
 
 def get_playlists():
-    ytmusic = YTMusic(BROWSER_AUTH_FILE)
+    ytmusic = headers_to_ytmusic()
     raw = ytmusic.get_library_playlists(limit=200)
 
     playlists = []
-
     for pl in raw:
         pid = pl.get("playlistId")
         title = pl.get("title")
-
         if not pid or not title:
             continue
-
         playlists.append({
+            "id": pid,
             "title": title,
-            "url": f"https://music.youtube.com/playlist?list={pid}"
+            "url": f"https://music.youtube.com/playlist?list={pid}",
+            "count": pl.get("count"),
         })
 
     return playlists
 
-def download_playlist(playlists):
-    title = playlists['title']
-    url = playlists['url']
-    count = playlists.get('count', 'Unknown')
 
-    skip_playlists = ['Liked Music', 'Episodes for Later']
-    if title in skip_playlists:
+def get_selection():
+    try:
+        with open(SELECTION_FILE) as f:
+            return json.load(f).get("ids", [])
+    except Exception:
+        return []
+
+
+def download_playlist(playlist):
+    title = playlist["title"]
+    url = playlist["url"]
+    count = playlist.get("count", "Unknown")
+
+    if title in UNSUPPORTED_TITLES:
         print(f"\n⚠ Skipping {title} (not supported by yt-dlp)")
         return True
 
-    safe_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in title)
-    safe_name = safe_name.strip().replace(' ', '_')
-    while '__' in safe_name:
-        safe_name = safe_name.replace('__', '_')
-    safe_name = safe_name.strip('_')
+    safe_name = "".join(c if c.isalnum() or c in (" ", "-", "_") else "_" for c in title)
+    safe_name = safe_name.strip().replace(" ", "_")
+    while "__" in safe_name:
+        safe_name = safe_name.replace("__", "_")
+    safe_name = safe_name.strip("_")
 
     playlist_dir = os.path.join(BASE_DIR, safe_name)
-    archive_file = os.path.join(playlist_dir, 'downloaded.txt')
+    archive_file = os.path.join(playlist_dir, "downloaded.txt")
 
     os.makedirs(playlist_dir, exist_ok=True)
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print(f"Downloading: {title}")
     print(f"Tracks: {count}")
     print(f"Saving to: {safe_name}/")
-    print("="*60)
+    print("=" * 60)
 
-    cookies_file = get_cookies()
+    cookie = get_cookie_header()
 
     cmd = [
         "yt-dlp",
-        "-f", "bestaudio",
+        "-f", "bestaudio/best",
         "-x", "--extract-audio",
         "--audio-format", AUDIO_CODEC,
         "--download-archive", archive_file,
@@ -93,15 +106,16 @@ def download_playlist(playlists):
         "--js-runtimes", "node",
         "--audio-multistreams",
         "--restrict-filenames",
-        "--postprocessor-args", "ffmpeg:-avoid_negative_ts make_zero -c:a libmp3lame -b:a 320k -ac 2 -ar 44100"  # Force proper MP3 encoding    ]
+        "--sleep-interval", "2",
+        "--max-sleep-interval", "5",
+        "--postprocessor-args", "ffmpeg:-avoid_negative_ts make_zero -c:a libmp3lame -b:a 320k -ac 2 -ar 44100",
+    ]
 
-        ]
-    
-    if cookies_file:
-        cmd.extend(["--cookies", cookies_file])
-        print("Using saved auth cookies")
+    if cookie:
+        cmd.extend(["--add-header", f"Cookie:{cookie}"])
+        print("Using saved auth headers")
     else:
-        print("⚠ No auth cookies — authenticate via the web UI first")
+        print("⚠ No auth headers — authenticate via the web UI first")
 
     try:
         print(f"\nStarting download for {title}...")
@@ -122,9 +136,9 @@ def download_playlist(playlists):
 
 
 def main():
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("YouTube Music Playlist Downloader")
-    print("="*60)
+    print("=" * 60)
 
     try:
         result = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True, check=True)
@@ -133,13 +147,20 @@ def main():
         print("✗ yt-dlp not found")
         sys.exit(1)
 
-    cookies_file = get_cookies()
-    if not cookies_file:
-        print("⚠ No auth cookies found — authenticate via the web UI first")
+    if not get_cookie_header():
+        print("⚠ No auth headers found — authenticate via the web UI first")
 
     print(f"\n📁 Download location: {BASE_DIR}")
 
     playlists = get_playlists()
+
+    selected_ids = get_selection()
+    if selected_ids:
+        playlists = [p for p in playlists if p["id"] in selected_ids]
+        print(f"\n▶ Downloading {len(playlists)} selected playlist(s)")
+    else:
+        print(f"\n▶ Downloading all {len(playlists)} playlist(s)")
+
     for playlist in playlists:
         download_playlist(playlist)
 

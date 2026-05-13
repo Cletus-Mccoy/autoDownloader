@@ -79,6 +79,13 @@
                 </svg>
                 <span class="flex-1 text-center">Schedule</span>
             </button>
+            <button id="playlists-btn" type="button" onclick="openPlaylistsModal()"
+                class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
+                </svg>
+                <span class="flex-1 text-center">Playlists</span>
+            </button>
             <button id="global-refresh-btn" type="button" onclick="toggleGlobalRefresh()"
                 class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2">
                 <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
@@ -294,41 +301,34 @@
                 &times;
             </button>
         </div>
-        <ol class="text-sm text-gray-300 space-y-3 mb-6">
+        <ol class="text-sm text-gray-300 space-y-3 mb-5">
             <li class="flex gap-3">
                 <span class="text-indigo-400 font-bold shrink-0">1.</span>
-                <span>Install the
-                    <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
-                       target="_blank" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">Get cookies.txt LOCALLY</a>
-                    extension (Chrome/Edge).
-                </span>
+                <span>Go to <a href="https://music.youtube.com" target="_blank" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">music.youtube.com</a> and make sure you're logged in.</span>
             </li>
             <li class="flex gap-3">
                 <span class="text-indigo-400 font-bold shrink-0">2.</span>
-                <span>Go to
-                    <a href="https://music.youtube.com" target="_blank" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">music.youtube.com</a>
-                    and make sure you're logged in.
-                </span>
+                <span>Open DevTools (<code class="bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">F12</code>) → <strong>Network</strong> tab. Filter by <code class="bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">browse</code> and reload the page.</span>
             </li>
             <li class="flex gap-3">
                 <span class="text-indigo-400 font-bold shrink-0">3.</span>
-                <span>Click the extension icon and export cookies for <code class="bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">music.youtube.com</code>.</span>
+                <span>Click a <code class="bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">POST /browse</code> request → <strong>Headers</strong> tab → scroll to <em>Request Headers</em>.</span>
             </li>
             <li class="flex gap-3">
                 <span class="text-indigo-400 font-bold shrink-0">4.</span>
-                <span>Upload the downloaded <code class="bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">cookies.txt</code> file below.</span>
+                <span>Right-click the request → <strong>Copy → Copy request headers</strong>, then paste below.</span>
             </li>
         </ol>
-        <form method="post" action="/auth/upload" enctype="multipart/form-data" class="space-y-3">
-            <input type="file" name="cookies" accept=".txt" required
-                class="block w-full text-sm text-gray-300 bg-gray-800 border border-gray-700 rounded-lg p-2
-                       file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0
-                       file:bg-indigo-600 file:text-white file:cursor-pointer file:text-xs
-                       hover:file:bg-indigo-500 transition-colors">
+        <form method="post" action="/auth/headers" class="space-y-3" id="auth-headers-form">
+            <textarea name="headers_raw" required rows="6" spellcheck="false"
+                placeholder="Paste request headers here…"
+                class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-xs font-mono text-gray-300 focus:outline-none focus:border-indigo-500 transition-colors resize-none"
+                style="background-color:#060b14"></textarea>
             <button type="submit"
                 class="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-500 font-semibold text-sm transition-colors">
-                Upload &amp; Save
+                Save &amp; Authenticate
             </button>
+            <p id="auth-error" class="text-xs text-red-400 hidden"></p>
         </form>
     </div>
 </div>
@@ -359,6 +359,47 @@
                 Cancel
             </button>
             <span id="cron-status" class="text-xs ml-1"></span>
+        </div>
+    </div>
+</div>
+
+<!-- PLAYLISTS MODAL -->
+<div id="playlists-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center hidden z-50">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl mx-4 flex flex-col" style="max-height:80vh">
+        <div class="flex justify-between items-center mb-4 flex-shrink-0">
+            <h2 class="text-lg font-bold text-white">Playlists</h2>
+            <button onclick="closePlaylistsModal()"
+                class="text-gray-500 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-800 transition-colors">
+                &times;
+            </button>
+        </div>
+
+        <!-- Controls row (hidden until list loads) -->
+        <div id="playlists-controls" class="hidden flex-shrink-0 flex items-center justify-between mb-3">
+            <span class="text-xs text-gray-500"><span id="playlists-selected-count">0</span> selected</span>
+            <div class="flex items-center gap-3">
+                <button onclick="selectAllPlaylists(true)" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Select all</button>
+                <span class="text-gray-700 text-xs">·</span>
+                <button onclick="selectAllPlaylists(false)" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">None</button>
+            </div>
+        </div>
+
+        <!-- List -->
+        <div id="playlists-list" class="flex-1 min-h-0 overflow-y-auto space-y-0.5 mb-4" style="scrollbar-gutter:stable">
+            <div class="py-6 text-center text-xs text-gray-600">Loading...</div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex-shrink-0 flex items-center gap-3 pt-4 border-t border-gray-800">
+            <button onclick="savePlaylists()" id="playlists-save-btn"
+                class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold transition-colors">
+                Save
+            </button>
+            <button onclick="closePlaylistsModal()"
+                class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300">
+                Cancel
+            </button>
+            <span id="playlists-status" class="text-xs ml-1"></span>
         </div>
     </div>
 </div>
@@ -492,19 +533,27 @@
     });
 
     // ── Auth UI ──────────────────────────────────────────────────────
+    const PL_BTN_CLASS_ON  = 'w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2';
+    const PL_BTN_CLASS_OFF = 'w-full px-3 py-2 rounded-lg bg-gray-800 text-xs font-medium text-gray-600 flex items-center gap-2 cursor-not-allowed opacity-40';
+
     function updateAuthUI() {
         fetch('/auth/status').then(r => r.json()).then(data => {
             const badge      = document.getElementById('auth-badge');
             const loginBtn   = document.getElementById('auth-btn');
             const revokeForm = document.getElementById('revoke-form');
+            const plBtn      = document.getElementById('playlists-btn');
             if (data.authenticated) {
                 badge.innerHTML = '<div class="w-full text-center text-xs px-3 py-1.5 rounded-lg font-semibold bg-green-900/60 border border-green-800 text-green-400">✓ Authenticated</div>';
                 loginBtn.style.display   = 'none';
                 revokeForm.style.display = '';
+                plBtn.disabled  = false;
+                plBtn.className = PL_BTN_CLASS_ON;
             } else {
                 badge.innerHTML = '<div class="w-full text-center text-xs px-3 py-1.5 rounded-lg font-semibold bg-red-900/40 border border-red-900 text-red-400">✗ Not authenticated</div>';
                 loginBtn.style.display   = '';
                 revokeForm.style.display = 'none';
+                plBtn.disabled  = true;
+                plBtn.className = PL_BTN_CLASS_OFF;
             }
         });
     }
@@ -771,6 +820,130 @@
         fetchRuns();
         fetchDownloadPage(1);
     });
+
+    // ── Playlists modal ──────────────────────────────────────────────
+    let _plAllPlaylists  = [];  // full list fetched from API
+    let _plSelectedIds   = [];  // saved selection (empty = all)
+
+    function openPlaylistsModal() {
+        const btn = document.getElementById('playlists-btn');
+        if (btn.disabled) return;
+        document.getElementById('playlists-modal').classList.remove('hidden');
+        loadPlaylists();
+    }
+    function closePlaylistsModal() {
+        document.getElementById('playlists-modal').classList.add('hidden');
+        document.getElementById('playlists-status').textContent = '';
+    }
+
+    async function loadPlaylists() {
+        const list     = document.getElementById('playlists-list');
+        const controls = document.getElementById('playlists-controls');
+        const saveBtn  = document.getElementById('playlists-save-btn');
+        controls.classList.add('hidden');
+        saveBtn.disabled = true;
+        list.innerHTML = '<div class="py-6 text-center text-xs text-gray-500">Fetching playlists…</div>';
+
+        try {
+            const [plData, selData] = await Promise.all([
+                fetch('/api/playlists').then(r => {
+                    if (!r.ok) return r.json().then(d => Promise.reject(d.error || 'Failed'));
+                    return r.json();
+                }),
+                fetch('/api/playlists/selection').then(r => r.json()),
+            ]);
+
+            _plAllPlaylists = plData;
+            _plSelectedIds  = selData.ids ?? [];
+            renderPlaylistList();
+            controls.classList.remove('hidden');
+            saveBtn.disabled = false;
+        } catch (err) {
+            list.innerHTML = `<div class="py-6 text-center text-xs text-red-400">✗ ${err}</div>`;
+        }
+    }
+
+    function renderPlaylistList() {
+        const list    = document.getElementById('playlists-list');
+        const allMode = _plSelectedIds.length === 0;
+
+        if (!_plAllPlaylists.length) {
+            list.innerHTML = '<div class="py-6 text-center text-xs text-gray-600">No playlists found.</div>';
+            updateSelectedCount();
+            return;
+        }
+
+        list.innerHTML = _plAllPlaylists.map(pl => {
+            const checked  = !pl.unsupported && (allMode || _plSelectedIds.includes(pl.id));
+            const countStr = pl.count ? `${pl.count} tracks` : '';
+            const dim      = pl.unsupported ? ' opacity-40' : '';
+            const tip      = pl.unsupported ? ' title="Not supported by yt-dlp"' : '';
+            return `<label class="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors${pl.unsupported ? ' cursor-not-allowed' : ' hover:bg-gray-800/50 cursor-pointer'}"${tip}>
+                <input type="checkbox" data-id="${pl.id}" ${checked ? 'checked' : ''} ${pl.unsupported ? 'disabled' : ''}
+                    onchange="updateSelectedCount()"
+                    class="w-3.5 h-3.5 accent-indigo-500 flex-shrink-0">
+                <div class="min-w-0 flex-1${dim}">
+                    <div class="text-xs font-medium text-gray-200 truncate">${pl.title}</div>
+                    ${countStr ? `<div class="text-xs text-gray-600">${countStr}</div>` : ''}
+                </div>
+                ${pl.unsupported ? '<span class="text-xs text-gray-700 flex-shrink-0">not supported</span>' : ''}
+            </label>`;
+        }).join('');
+
+        updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+        const checked = document.querySelectorAll('#playlists-list input[type=checkbox]:checked:not(:disabled)');
+        const total   = document.querySelectorAll('#playlists-list input[type=checkbox]:not(:disabled)');
+        const el      = document.getElementById('playlists-selected-count');
+        if (checked.length === total.length) {
+            el.textContent = 'All';
+        } else {
+            el.textContent = checked.length;
+        }
+    }
+
+    function selectAllPlaylists(checked) {
+        document.querySelectorAll('#playlists-list input[type=checkbox]:not(:disabled)')
+            .forEach(cb => { cb.checked = checked; });
+        updateSelectedCount();
+    }
+
+    async function savePlaylists() {
+        const status  = document.getElementById('playlists-status');
+        const saveBtn = document.getElementById('playlists-save-btn');
+        const checked = [...document.querySelectorAll('#playlists-list input[type=checkbox]:checked:not(:disabled)')];
+        const total   = [...document.querySelectorAll('#playlists-list input[type=checkbox]:not(:disabled)')];
+
+        // If all are checked, save empty ids (= "download all") to match default behaviour
+        const ids = checked.length === total.length ? [] : checked.map(cb => cb.dataset.id);
+
+        status.textContent = 'Saving…';
+        status.className   = 'text-xs text-gray-400 ml-1';
+        saveBtn.disabled   = true;
+        try {
+            const res = await fetch('/api/playlists/selection', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ ids }),
+            });
+            if (res.ok) {
+                _plSelectedIds     = ids;
+                status.textContent = '✓ Saved';
+                status.className   = 'text-xs text-green-400 ml-1';
+                setTimeout(closePlaylistsModal, 1000);
+            } else {
+                throw new Error('Server error');
+            }
+        } catch (e) {
+            status.textContent = '✗ ' + e.message;
+            status.className   = 'text-xs text-red-400 ml-1';
+        } finally {
+            saveBtn.disabled = false;
+            setTimeout(() => { status.textContent = ''; }, 4000);
+        }
+    }
 </script>
 
 </body>
