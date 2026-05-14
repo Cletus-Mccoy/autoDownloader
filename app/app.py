@@ -121,6 +121,20 @@ def get_download_size():
         total /= 1024
     return f"{total:.2f} TB"
 
+@app.route("/api/status")
+def api_status():
+    files = get_files()
+    runs = load_runs()
+    last_run = runs[0] if runs else None
+    next_run, delta = get_next_run_safe()
+    global run_thread
+    return jsonify({
+        "tracks": len(files),
+        "size": get_download_size(),
+        "last_run": last_run["status"] if last_run else "never",
+        "next_run": delta or next_run,
+        "running": run_thread is not None and run_thread.is_alive(),
+    })
 
 @app.route("/run-stream")
 def run_stream():
