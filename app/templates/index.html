@@ -549,7 +549,8 @@
                 plBtn.disabled  = false;
                 plBtn.className = PL_BTN_CLASS_ON;
             } else {
-                badge.innerHTML = '<div class="w-full text-center text-xs px-3 py-1.5 rounded-lg font-semibold bg-red-900/40 border border-red-900 text-red-400">✗ Not authenticated</div>';
+                const msg = data.reason === 'expired' ? '✗ Credentials expired' : '✗ Not authenticated';
+                badge.innerHTML = `<div class="w-full text-center text-xs px-3 py-1.5 rounded-lg font-semibold bg-red-900/40 border border-red-900 text-red-400">${msg}</div>`;
                 loginBtn.style.display   = '';
                 revokeForm.style.display = 'none';
                 plBtn.disabled  = true;

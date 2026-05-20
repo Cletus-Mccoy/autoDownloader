@@ -20,30 +20,22 @@
         {
             "label": "Build Docker Image",
             "type": "shell",
-            "command": "docker build --no-cache -t auto-downloader:latest ./app",
-            "group": "build"
-        },
-        {
-            "label": "Build Docker Image (cached)",
-            "type": "shell",
-            "command": "docker compose build",
-            "options": { "cwd": "${workspaceFolder}/app" },
+            "command": "make build",
+            "options": { "cwd": "${workspaceFolder}" },
             "group": "build"
         },
         {
             "label": "Test App (container)",
             "type": "shell",
-            "command": "docker compose run --rm ytmusic pytest tests -v",
-            "options": { "cwd": "${workspaceFolder}/app" },
-            "dependsOn": "Build Docker Image (cached)",
-            "dependsOrder": "sequence",
+            "command": "make test",
+            "options": { "cwd": "${workspaceFolder}" },
             "group": "test"
         },
         {
             "label": "Test and Push",
             "type": "shell",
-            "command": "docker compose build; if ($LASTEXITCODE -ne 0) { exit 1 }; docker compose run --rm ytmusic pytest tests -v; if ($LASTEXITCODE -ne 0) { exit 1 }; Get-Content ../.env | Where-Object { $_ -notmatch '^#' -and $_ -match '=' } | ForEach-Object { $k,$v = $_ -split '=',2; [System.Environment]::SetEnvironmentVariable($k.Trim(), $v.Trim()) }; docker build --no-cache -t auto-downloader:latest .; if ($LASTEXITCODE -ne 0) { exit 1 }; docker tag auto-downloader:latest \"$env:DOCKER_USER/auto-downloader:latest\"; docker push \"$env:DOCKER_USER/auto-downloader:latest\"",
-            "options": { "cwd": "${workspaceFolder}/app" },
+            "command": "make push",
+            "options": { "cwd": "${workspaceFolder}" },
             "group": "build"
         }
     ]
