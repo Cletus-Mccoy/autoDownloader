@@ -9,7 +9,7 @@ import re
 from croniter import croniter
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3
-from mutagen import File as MutagenFile
+from mutagen._file import File as MutagenFile
 from scripts.timer import get_next_run_safe
 from scripts.runner import run_scheduler_stream
 from scripts.scheduler import log_run as _cron_log_run
@@ -214,7 +214,15 @@ def clear_downloads():
 
 @app.route("/auth/status")
 def auth_status():
-    return jsonify({"authenticated": os.path.exists(HEADERS_AUTH_FILE)})
+    if not os.path.exists(HEADERS_AUTH_FILE):
+        return jsonify({"authenticated": False, "reason": "no_credentials"})
+    try:
+        from scripts.ytmusic_auth import headers_to_ytmusic
+        ytmusic = headers_to_ytmusic()
+        ytmusic.get_library_playlists(limit=1)
+        return jsonify({"authenticated": True})
+    except Exception:
+        return jsonify({"authenticated": False, "reason": "expired"})
 
 
 _HEADER_NAME_RE = re.compile(r"^:?[a-z][a-z0-9\-]*$")
