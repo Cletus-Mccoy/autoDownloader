@@ -131,3 +131,17 @@ def test_api_logs_returns_list(client):
     resp = client.get("/api/logs")
     assert resp.status_code == 200
     assert isinstance(resp.get_json(), list)
+
+
+def test_api_status_returns_expected_fields(client):
+    resp = client.get("/api/status")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "tracks" in data
+    assert "size" in data
+    assert "last_run" in data
+    assert "next_run" in data
+    assert "running" in data
+    # Optionally check types
+    assert isinstance(data["tracks"], int)
+    assert isinstance(data["running"], bool)
