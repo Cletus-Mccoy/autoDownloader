@@ -20,21 +20,21 @@
         {
             "label": "Build Docker Image",
             "type": "shell",
-            "command": "make build",
+            "command": "wsl make build",
             "options": { "cwd": "${workspaceFolder}" },
             "group": "build"
         },
         {
             "label": "Test App (container)",
             "type": "shell",
-            "command": "make test",
+            "command": "wsl make test",
             "options": { "cwd": "${workspaceFolder}" },
             "group": "test"
         },
         {
             "label": "Test and Push",
             "type": "shell",
-            "command": "make push",
+            "command": "wsl make push",
             "options": { "cwd": "${workspaceFolder}" },
             "group": "build"
         }
