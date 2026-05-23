@@ -108,7 +108,7 @@ def download_playlist(playlist):
         "--restrict-filenames",
         "--sleep-interval", "2",
         "--max-sleep-interval", "5",
-        "--postprocessor-args", "ffmpeg:-avoid_negative_ts make_zero -c:a libmp3lame -b:a 320k -ac 2 -ar 44100",
+        "--postprocessor-args", "ExtractAudio:-avoid_negative_ts make_zero -c:a libmp3lame -b:a 320k -ac 2 -ar 44100",
     ]
 
     if cookie:
