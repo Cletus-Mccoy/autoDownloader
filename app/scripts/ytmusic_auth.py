@@ -29,12 +29,16 @@ def has_headers() -> bool:
 
 
 def headers_to_ytmusic() -> YTMusic:
-    """Return an authenticated YTMusic client, preferring OAuth if configured.
+    """Return an authenticated YTMusic client, preferring cookie headers.
 
-    OAuth refresh tokens live effectively indefinitely (~6 months of idle
-    tolerance); the cookie-header path expires more aggressively. Fall back
-    to headers so existing setups keep working.
+    Historically OAuth was preferred (longer-lived tokens), but Google now
+    rejects tokens from custom OAuth clients on the internal
+    music.youtube.com/youtubei/v1/* endpoints with a 400 INVALID_ARGUMENT.
+    Cookies are the only reliable path today, so use them when present and
+    only fall back to OAuth if cookies aren't set up.
     """
+    if os.path.exists(HEADERS_AUTH_FILE):
+        return YTMusic(HEADERS_AUTH_FILE)
     client = load_oauth_client()
     if client and os.path.exists(OAUTH_FILE):
         from ytmusicapi.auth.oauth import OAuthCredentials
