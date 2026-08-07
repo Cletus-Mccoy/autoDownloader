@@ -1,8 +1,14 @@
 # Log files
 log.txt
 
-# Cookies
+# Cookies / captured browser sessions — NEVER commit; contain Google
+# account-wide session tokens (SID, __Secure-1PSID, LOGIN_INFO, …) that
+# skip 2FA if leaked. See git incident 2026-08 (browser.json).
 cookies.txt
+browser.json
+browser*.json
+*cookies*.json
+*session*.json
 
 # Environment variables
 .env
