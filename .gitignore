@@ -16,3 +16,7 @@ __pycache__/
 
 # Virtual environment
 .venv/
+
+# Exported browser auth state — session cookies, never commit (Ticky #491)
+browser.json
+cookies*.json
