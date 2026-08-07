@@ -24,15 +24,30 @@ def data_dir(tmp_path_factory):
 @pytest.fixture
 def flask_app(data_dir, monkeypatch, tmp_path):
     import app as flask_module
+    from scripts import ytmusic_auth
+
+    auth_dir       = str(data_dir / "auth")
+    headers_file   = str(data_dir / "auth" / "headers_auth.json")
+    oauth_file     = str(data_dir / "auth" / "oauth.json")
+    oauth_client   = str(data_dir / "auth" / "oauth_client.json")
 
     monkeypatch.setattr(flask_module, "DATA_DIR",          str(data_dir))
     monkeypatch.setattr(flask_module, "RUNS_FILE",         str(data_dir / "runs.json"))
     monkeypatch.setattr(flask_module, "DOWNLOAD_DIR",      str(data_dir / "downloads"))
     monkeypatch.setattr(flask_module, "LOG_DIR",           str(data_dir / "logs"))
-    monkeypatch.setattr(flask_module, "AUTH_DIR",          str(data_dir / "auth"))
-    monkeypatch.setattr(flask_module, "HEADERS_AUTH_FILE", str(data_dir / "auth" / "headers_auth.json"))
+    monkeypatch.setattr(flask_module, "AUTH_DIR",          auth_dir)
+    monkeypatch.setattr(flask_module, "HEADERS_AUTH_FILE", headers_file)
+    monkeypatch.setattr(flask_module, "OAUTH_FILE",        oauth_file)
+    monkeypatch.setattr(flask_module, "OAUTH_CLIENT_FILE", oauth_client)
     monkeypatch.setattr(flask_module, "SELECTION_FILE",    str(data_dir / "playlist_selection.json"))
     monkeypatch.setattr(flask_module, "CRON_FILE",         str(tmp_path / "crontab"))
+
+    # Also patch ytmusic_auth's constants — the /auth/status route imports
+    # has_oauth/has_headers from there, which read these paths directly.
+    monkeypatch.setattr(ytmusic_auth, "AUTH_DIR",          auth_dir)
+    monkeypatch.setattr(ytmusic_auth, "HEADERS_AUTH_FILE", headers_file)
+    monkeypatch.setattr(ytmusic_auth, "OAUTH_FILE",        oauth_file)
+    monkeypatch.setattr(ytmusic_auth, "OAUTH_CLIENT_FILE", oauth_client)
 
     flask_module.app.config["TESTING"] = True
     return flask_module.app

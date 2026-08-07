@@ -293,7 +293,7 @@
 
 <!-- AUTH MODAL -->
 <div id="auth-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center hidden z-50">
-    <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl mx-4">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl mx-4 overflow-y-auto" style="max-height:90vh">
         <div class="flex justify-between items-center mb-5">
             <h2 class="text-lg font-bold text-white">🔐 Authenticate with YouTube</h2>
             <button onclick="closeAuthModal()"
@@ -301,35 +301,96 @@
                 &times;
             </button>
         </div>
-        <ol class="text-sm text-gray-300 space-y-3 mb-5">
-            <li class="flex gap-3">
-                <span class="text-indigo-400 font-bold shrink-0">1.</span>
-                <span>Go to <a href="https://music.youtube.com" target="_blank" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">music.youtube.com</a> and make sure you're logged in.</span>
-            </li>
-            <li class="flex gap-3">
-                <span class="text-indigo-400 font-bold shrink-0">2.</span>
-                <span>Open DevTools (<code class="bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">F12</code>) → <strong>Network</strong> tab. Filter by <code class="bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">browse</code> and reload the page.</span>
-            </li>
-            <li class="flex gap-3">
-                <span class="text-indigo-400 font-bold shrink-0">3.</span>
-                <span>Click a <code class="bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">POST /browse</code> request → <strong>Headers</strong> tab → scroll to <em>Request Headers</em>.</span>
-            </li>
-            <li class="flex gap-3">
-                <span class="text-indigo-400 font-bold shrink-0">4.</span>
-                <span>Right-click the request → <strong>Copy → Copy request headers</strong>, then paste below.</span>
-            </li>
-        </ol>
-        <form method="post" action="/auth/headers" class="space-y-3" id="auth-headers-form">
-            <textarea name="headers_raw" required rows="6" spellcheck="false"
-                placeholder="Paste request headers here…"
-                class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-xs font-mono text-gray-300 focus:outline-none focus:border-indigo-500 transition-colors resize-none"
-                style="background-color:#060b14"></textarea>
-            <button type="submit"
-                class="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-500 font-semibold text-sm transition-colors">
-                Save &amp; Authenticate
+
+        <!-- Auth method tabs -->
+        <div class="flex gap-2 mb-4 border-b border-gray-800">
+            <button id="tab-oauth-btn" onclick="switchAuthTab('oauth')"
+                class="px-3 py-2 text-xs font-semibold text-indigo-400 border-b-2 border-indigo-500">
+                OAuth <span class="opacity-60">(long-lived)</span>
             </button>
-            <p id="auth-error" class="text-xs text-red-400 hidden"></p>
-        </form>
+            <button id="tab-headers-btn" onclick="switchAuthTab('headers')"
+                class="px-3 py-2 text-xs font-semibold text-gray-500 border-b-2 border-transparent hover:text-gray-300">
+                Cookie headers
+            </button>
+        </div>
+
+        <!-- OAuth tab -->
+        <div id="tab-oauth" class="space-y-3">
+            <p class="text-xs text-gray-400">
+                OAuth gives long-lived access (refresh token survives ~6 months of inactivity).
+                Downloads still need cookie headers — OAuth only covers playlist listing.
+            </p>
+            <ol class="text-sm text-gray-300 space-y-2">
+                <li class="flex gap-3">
+                    <span class="text-indigo-400 font-bold shrink-0">1.</span>
+                    <span>Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="text-indigo-400 hover:text-indigo-300 underline">Google Cloud Console → Credentials</a>.</span>
+                </li>
+                <li class="flex gap-3">
+                    <span class="text-indigo-400 font-bold shrink-0">2.</span>
+                    <span>Enable the <strong>YouTube Data API v3</strong> for a project.</span>
+                </li>
+                <li class="flex gap-3">
+                    <span class="text-indigo-400 font-bold shrink-0">3.</span>
+                    <span>Create an OAuth client ID of type <strong>TVs and Limited Input devices</strong>.</span>
+                </li>
+                <li class="flex gap-3">
+                    <span class="text-indigo-400 font-bold shrink-0">4.</span>
+                    <span>Paste the client ID and secret below.</span>
+                </li>
+            </ol>
+            <div id="oauth-form" class="space-y-2">
+                <input id="oauth-client-id" type="text" placeholder="Client ID" spellcheck="false"
+                    class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-xs font-mono text-gray-300 focus:outline-none focus:border-indigo-500"
+                    style="background-color:#060b14">
+                <input id="oauth-client-secret" type="password" placeholder="Client Secret" spellcheck="false"
+                    class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-xs font-mono text-gray-300 focus:outline-none focus:border-indigo-500"
+                    style="background-color:#060b14">
+                <button onclick="startOAuth()" id="oauth-start-btn"
+                    class="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-500 font-semibold text-sm transition-colors">
+                    Start OAuth
+                </button>
+            </div>
+            <div id="oauth-code-box" class="hidden bg-gray-950 border border-indigo-800 rounded-lg p-4 space-y-2" style="background-color:#060b14">
+                <p class="text-xs text-gray-400">Visit this URL and enter the code:</p>
+                <a id="oauth-verify-url" href="#" target="_blank" class="block text-indigo-400 hover:text-indigo-300 underline text-sm break-all"></a>
+                <div class="text-2xl font-mono font-bold text-white tracking-widest text-center py-2" id="oauth-user-code"></div>
+                <p class="text-xs text-gray-500 text-center" id="oauth-poll-status">Waiting for you to authorize…</p>
+            </div>
+            <p id="oauth-error" class="text-xs text-red-400 hidden"></p>
+        </div>
+
+        <!-- Cookie headers tab -->
+        <div id="tab-headers" class="space-y-3 hidden">
+            <ol class="text-sm text-gray-300 space-y-2">
+                <li class="flex gap-3">
+                    <span class="text-indigo-400 font-bold shrink-0">1.</span>
+                    <span>Go to <a href="https://music.youtube.com" target="_blank" class="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">music.youtube.com</a> and make sure you're logged in.</span>
+                </li>
+                <li class="flex gap-3">
+                    <span class="text-indigo-400 font-bold shrink-0">2.</span>
+                    <span>Open DevTools (<code class="bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">F12</code>) → <strong>Network</strong> tab. Filter by <code class="bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">browse</code> and reload the page.</span>
+                </li>
+                <li class="flex gap-3">
+                    <span class="text-indigo-400 font-bold shrink-0">3.</span>
+                    <span>Click a <code class="bg-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">POST /browse</code> request → <strong>Headers</strong> tab → scroll to <em>Request Headers</em>.</span>
+                </li>
+                <li class="flex gap-3">
+                    <span class="text-indigo-400 font-bold shrink-0">4.</span>
+                    <span>Right-click the request → <strong>Copy → Copy request headers</strong>, then paste below.</span>
+                </li>
+            </ol>
+            <form method="post" action="/auth/headers" class="space-y-3" id="auth-headers-form">
+                <textarea name="headers_raw" required rows="6" spellcheck="false"
+                    placeholder="Paste request headers here…"
+                    class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-xs font-mono text-gray-300 focus:outline-none focus:border-indigo-500 transition-colors resize-none"
+                    style="background-color:#060b14"></textarea>
+                <button type="submit"
+                    class="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-500 font-semibold text-sm transition-colors">
+                    Save &amp; Authenticate
+                </button>
+                <p id="auth-error" class="text-xs text-red-400 hidden"></p>
+            </form>
+        </div>
     </div>
 </div>
 
@@ -543,7 +604,8 @@
             const revokeForm = document.getElementById('revoke-form');
             const plBtn      = document.getElementById('playlists-btn');
             if (data.authenticated) {
-                badge.innerHTML = '<div class="w-full text-center text-xs px-3 py-1.5 rounded-lg font-semibold bg-green-900/60 border border-green-800 text-green-400">✓ Authenticated</div>';
+                const methodLabel = data.method === 'oauth' ? ' (OAuth)' : ' (cookies)';
+                badge.innerHTML = `<div class="w-full text-center text-xs px-3 py-1.5 rounded-lg font-semibold bg-green-900/60 border border-green-800 text-green-400">✓ Authenticated${methodLabel}</div>`;
                 loginBtn.style.display   = 'none';
                 revokeForm.style.display = '';
                 plBtn.disabled  = false;
@@ -561,7 +623,89 @@
     updateAuthUI();
 
     function openAuthModal()  { document.getElementById('auth-modal').classList.remove('hidden'); }
-    function closeAuthModal() { document.getElementById('auth-modal').classList.add('hidden'); }
+    function closeAuthModal() {
+        document.getElementById('auth-modal').classList.add('hidden');
+        if (_oauthPollTimer) { clearInterval(_oauthPollTimer); _oauthPollTimer = null; }
+    }
+
+    // ── OAuth flow ───────────────────────────────────────────────────
+    let _oauthPollTimer = null;
+
+    function switchAuthTab(which) {
+        const tabs = ['oauth', 'headers'];
+        tabs.forEach(t => {
+            document.getElementById('tab-' + t).classList.toggle('hidden', t !== which);
+            const btn = document.getElementById('tab-' + t + '-btn');
+            if (t === which) {
+                btn.classList.add('text-indigo-400', 'border-indigo-500');
+                btn.classList.remove('text-gray-500', 'border-transparent');
+            } else {
+                btn.classList.remove('text-indigo-400', 'border-indigo-500');
+                btn.classList.add('text-gray-500', 'border-transparent');
+            }
+        });
+    }
+
+    async function startOAuth() {
+        const clientId     = document.getElementById('oauth-client-id').value.trim();
+        const clientSecret = document.getElementById('oauth-client-secret').value.trim();
+        const errEl        = document.getElementById('oauth-error');
+        const btn          = document.getElementById('oauth-start-btn');
+        errEl.classList.add('hidden');
+        if (!clientId || !clientSecret) {
+            errEl.textContent = 'Client ID and secret required';
+            errEl.classList.remove('hidden');
+            return;
+        }
+        btn.disabled = true;
+        btn.textContent = 'Starting…';
+        try {
+            const res = await fetch('/auth/oauth/setup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ client_id: clientId, client_secret: clientSecret }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Setup failed');
+            document.getElementById('oauth-verify-url').textContent = data.verification_url;
+            document.getElementById('oauth-verify-url').href = data.verification_url;
+            document.getElementById('oauth-user-code').textContent = data.user_code;
+            document.getElementById('oauth-code-box').classList.remove('hidden');
+            pollOAuth(data.device_code, (data.interval || 5) * 1000);
+        } catch (e) {
+            errEl.textContent = e.message;
+            errEl.classList.remove('hidden');
+            btn.disabled = false;
+            btn.textContent = 'Start OAuth';
+        }
+    }
+
+    function pollOAuth(deviceCode, intervalMs) {
+        clearInterval(_oauthPollTimer);
+        const statusEl = document.getElementById('oauth-poll-status');
+        _oauthPollTimer = setInterval(async () => {
+            try {
+                const res = await fetch('/auth/oauth/poll', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ device_code: deviceCode }),
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    clearInterval(_oauthPollTimer);
+                    statusEl.textContent = '✓ Authorized!';
+                    statusEl.className = 'text-xs text-green-400 text-center';
+                    setTimeout(() => { closeAuthModal(); updateAuthUI(); }, 800);
+                } else if (data.status === 'error') {
+                    clearInterval(_oauthPollTimer);
+                    statusEl.textContent = '✗ ' + (data.error || 'Authorization failed');
+                    statusEl.className = 'text-xs text-red-400 text-center';
+                }
+            } catch (e) {
+                // Transient network error — keep polling.
+            }
+        }, intervalMs);
+    }
 
     function openScheduleModal()  { loadCron(); document.getElementById('schedule-modal').classList.remove('hidden'); }
     function closeScheduleModal() { document.getElementById('schedule-modal').classList.add('hidden'); }

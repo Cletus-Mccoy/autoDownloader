@@ -22,6 +22,8 @@ DOWNLOAD_DIR = "/app/downloads"
 LOG_DIR = f"{DATA_DIR}/logs"
 AUTH_DIR = f"{DATA_DIR}/auth"
 HEADERS_AUTH_FILE = f"{AUTH_DIR}/headers_auth.json"
+OAUTH_FILE = f"{AUTH_DIR}/oauth.json"
+OAUTH_CLIENT_FILE = f"{AUTH_DIR}/oauth_client.json"
 CRON_FILE        = "/etc/cron.d/ytmusic"
 CRON_SUFFIX      = "root python /app/scripts/scheduler.py >> /var/log/cron.log 2>&1"
 SELECTION_FILE   = f"{DATA_DIR}/playlist_selection.json"
@@ -228,15 +230,16 @@ def clear_downloads():
 
 @app.route("/auth/status")
 def auth_status():
-    if not os.path.exists(HEADERS_AUTH_FILE):
-        return jsonify({"authenticated": False, "reason": "no_credentials"})
+    from scripts.ytmusic_auth import has_oauth, has_headers, headers_to_ytmusic
+    method = "oauth" if has_oauth() else ("headers" if has_headers() else None)
+    if method is None:
+        return jsonify({"authenticated": False, "reason": "no_credentials", "method": None})
     try:
-        from scripts.ytmusic_auth import headers_to_ytmusic
         ytmusic = headers_to_ytmusic()
         ytmusic.get_library_playlists(limit=1)
-        return jsonify({"authenticated": True})
+        return jsonify({"authenticated": True, "method": method})
     except Exception:
-        return jsonify({"authenticated": False, "reason": "expired"})
+        return jsonify({"authenticated": False, "reason": "expired", "method": method})
 
 
 _HEADER_NAME_RE = re.compile(r"^:?[a-z][a-z0-9\-]*$")
@@ -290,9 +293,85 @@ def auth_headers():
 
 @app.route("/auth/revoke", methods=["POST"])
 def auth_revoke():
-    if os.path.exists(HEADERS_AUTH_FILE):
-        os.remove(HEADERS_AUTH_FILE)
+    for path in (HEADERS_AUTH_FILE, OAUTH_FILE, OAUTH_CLIENT_FILE):
+        if os.path.exists(path):
+            os.remove(path)
     return redirect("/")
+
+
+@app.route("/auth/oauth/setup", methods=["POST"])
+def auth_oauth_setup():
+    """Start device flow. Persists client credentials and returns a user_code
+    + verification URL for the frontend to display."""
+    client_id = (request.json or {}).get("client_id", "").strip()
+    client_secret = (request.json or {}).get("client_secret", "").strip()
+    if not client_id or not client_secret:
+        return jsonify({"error": "client_id and client_secret required"}), 400
+    try:
+        from ytmusicapi.auth.oauth import OAuthCredentials
+        creds = OAuthCredentials(client_id=client_id, client_secret=client_secret)
+        code = creds.get_code()
+    except Exception as e:
+        return jsonify({"error": f"Failed to start OAuth flow: {e}"}), 400
+    os.makedirs(AUTH_DIR, exist_ok=True)
+    tmp = OAUTH_CLIENT_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"client_id": client_id, "client_secret": client_secret}, f)
+    os.replace(tmp, OAUTH_CLIENT_FILE)
+    return jsonify({
+        "device_code": code["device_code"],
+        "user_code": code["user_code"],
+        "verification_url": code["verification_url"],
+        "interval": code.get("interval", 5),
+        "expires_in": code.get("expires_in", 1800),
+    })
+
+
+@app.route("/auth/oauth/poll", methods=["POST"])
+def auth_oauth_poll():
+    """Poll Google for the token. Returns pending until the user completes
+    the code entry, then saves the token in ytmusicapi's expected format
+    (Token dataclass fields including computed `expires_at`)."""
+    import time
+    device_code = (request.json or {}).get("device_code", "").strip()
+    if not device_code:
+        return jsonify({"error": "device_code required"}), 400
+    from scripts.ytmusic_auth import load_oauth_client
+    client = load_oauth_client()
+    if not client:
+        return jsonify({"error": "no client credentials — run setup first"}), 400
+    try:
+        from ytmusicapi.auth.oauth import OAuthCredentials
+        creds = OAuthCredentials(
+            client_id=client["client_id"],
+            client_secret=client["client_secret"],
+        )
+        raw = creds.token_from_code(device_code)
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 400
+    if isinstance(raw, dict) and raw.get("error"):
+        err = raw["error"]
+        if err in ("authorization_pending", "slow_down"):
+            return jsonify({"status": "pending"})
+        return jsonify({"status": "error", "error": err}), 400
+    if not isinstance(raw, dict) or "access_token" not in raw:
+        return jsonify({"status": "pending"})
+    # Match ytmusicapi's on-disk shape: include all Token dataclass fields
+    # plus a computed expires_at so OAuthToken.is_expiring works on load.
+    token_file = {
+        "access_token":  raw["access_token"],
+        "refresh_token": raw.get("refresh_token", ""),
+        "scope":         raw.get("scope", "https://www.googleapis.com/auth/youtube"),
+        "token_type":    raw.get("token_type", "Bearer"),
+        "expires_in":    raw.get("expires_in", 3600),
+        "expires_at":    int(time.time()) + raw.get("expires_in", 3600),
+    }
+    os.makedirs(AUTH_DIR, exist_ok=True)
+    tmp = OAUTH_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(token_file, f)
+    os.replace(tmp, OAUTH_FILE)
+    return jsonify({"status": "success"})
 
 
 @app.route("/logs/<path:name>")
