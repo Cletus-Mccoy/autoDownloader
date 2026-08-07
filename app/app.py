@@ -231,7 +231,8 @@ def clear_downloads():
 @app.route("/auth/status")
 def auth_status():
     from scripts.ytmusic_auth import has_oauth, has_headers, headers_to_ytmusic
-    method = "oauth" if has_oauth() else ("headers" if has_headers() else None)
+    # Match headers_to_ytmusic()'s precedence: headers win when both present.
+    method = "headers" if has_headers() else ("oauth" if has_oauth() else None)
     if method is None:
         return jsonify({"authenticated": False, "reason": "no_credentials", "method": None})
     try:

@@ -302,8 +302,12 @@
             </button>
         </div>
 
-        <!-- Auth method tabs -->
-        <div class="flex gap-2 mb-4 border-b border-gray-800">
+        <!-- Auth method tabs — OAuth hidden: Google/YouTube Music rejects tokens
+             from custom OAuth clients with a 400 INVALID_ARGUMENT on the
+             music.youtube.com/youtubei endpoints, regardless of Data-API scopes.
+             Backend routes + Python plumbing remain wired so this can be
+             re-enabled trivially if the ecosystem opens back up. -->
+        <div class="flex gap-2 mb-4 border-b border-gray-800 hidden">
             <button id="tab-oauth-btn" onclick="switchAuthTab('oauth')"
                 class="px-3 py-2 text-xs font-semibold text-indigo-400 border-b-2 border-indigo-500">
                 OAuth <span class="opacity-60">(long-lived)</span>
@@ -314,8 +318,8 @@
             </button>
         </div>
 
-        <!-- OAuth tab -->
-        <div id="tab-oauth" class="space-y-3">
+        <!-- OAuth tab (hidden — see comment above) -->
+        <div id="tab-oauth" class="space-y-3 hidden">
             <p class="text-xs text-gray-400">
                 OAuth gives long-lived access (refresh token survives ~6 months of inactivity).
                 Downloads still need cookie headers — OAuth only covers playlist listing.
@@ -359,8 +363,8 @@
             <p id="oauth-error" class="text-xs text-red-400 hidden"></p>
         </div>
 
-        <!-- Cookie headers tab -->
-        <div id="tab-headers" class="space-y-3 hidden">
+        <!-- Cookie headers tab (default-visible now that OAuth is hidden) -->
+        <div id="tab-headers" class="space-y-3">
             <ol class="text-sm text-gray-300 space-y-2">
                 <li class="flex gap-3">
                     <span class="text-indigo-400 font-bold shrink-0">1.</span>
