@@ -30,6 +30,12 @@ EXCLUDED_TITLES = {
     "Replay Mix",
 }
 
+# Title substrings (case-insensitive) for playlists to skip. Empty by default:
+# a playlist name is not reliable evidence of what's in it ("20. UNSORTED TECH"
+# is a house/tech vibe, not a staging bin), so exclusions are the user's call
+# via --exclude rather than something inferred here.
+DEFAULT_EXCLUDE_PATTERNS = ()
+
 # A playlist with fewer than this many tracks can't be learned reliably.
 MIN_TRACKS_PER_PLAYLIST = int(os.getenv("VIBE_MIN_TRACKS", "15"))
 

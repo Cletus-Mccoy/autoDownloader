@@ -250,6 +250,8 @@ def write_report(path, ctx):
     add("```\n")
 
     add("## Data notes\n")
+    add(f"- Playlists excluded by name (staging bins, year compilations): "
+        f"{', '.join(ctx['excluded']) or 'none'}")
     add(f"- Playlists too small (< {ctx['min_tracks']} tracks), excluded: "
         f"{', '.join(ctx['too_small']) or 'none'}")
     add(f"- Tracks in more than one playlist, dropped as ambiguous: "
@@ -275,6 +277,11 @@ def main():
                         help="re-fetch playlists from YouTube Music")
     parser.add_argument("--min-tracks", type=int, default=None,
                         help="minimum playlist size to include")
+    parser.add_argument("--exclude", nargs="*", default=None,
+                        metavar="SUBSTRING",
+                        help="skip playlists whose title contains any of these "
+                             f"(default: {' '.join(config.DEFAULT_EXCLUDE_PATTERNS)}; "
+                             "pass --exclude with no values to keep everything)")
     parser.add_argument("--target-precision", type=float, default=0.90,
                         help="precision the routing thresholds aim for")
     parser.add_argument("--skip-fetch", action="store_true",
@@ -287,13 +294,16 @@ def main():
         lib = library.load_library(refresh=args.refresh_library)
     except library.AuthError as e:
         raise SystemExit(f"\n{e}")
-    rows, stats = library.labelled_tracks(lib, min_tracks=args.min_tracks)
+    rows, stats = library.labelled_tracks(lib, min_tracks=args.min_tracks,
+                                          exclude=args.exclude)
     min_tracks = args.min_tracks or config.MIN_TRACKS_PER_PLAYLIST
 
     print(f"\n{len(stats['playlists_kept'])} playlists with >= {min_tracks} "
           f"tracks, {stats['total_labelled']} labelled tracks, "
           f"{len(stats['ambiguous_tracks'])} dropped as ambiguous "
           f"(in multiple playlists)")
+    if stats["playlists_excluded"]:
+        print(f"Excluded by name: {', '.join(stats['playlists_excluded'])}")
     if stats["playlists_too_small"]:
         print(f"Too small to learn: {', '.join(stats['playlists_too_small'])}")
     if not stats["playlists_kept"]:
@@ -363,6 +373,7 @@ def main():
         "report": classification_report(y, predicted, labels=classes,
                                         zero_division=0),
         "min_tracks": min_tracks,
+        "excluded": stats["playlists_excluded"],
         "too_small": stats["playlists_too_small"],
         "n_ambiguous": len(stats["ambiguous_tracks"]),
         "thin": thin,

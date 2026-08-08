@@ -107,20 +107,31 @@ def load_library(refresh=False):
     return library
 
 
-def labelled_tracks(library, min_tracks=None):
+def labelled_tracks(library, min_tracks=None, exclude=None):
     """Playlist membership -> single-label training rows.
 
     Tracks that sit in more than one playlist have an ambiguous label under a
     single-label model, so they're dropped and counted. Playlists below the
     minimum size are dropped too — they can't support a threshold you'd trust.
 
+    Exclusions are applied here rather than at fetch time so library.json stays
+    a complete snapshot and changing them costs nothing.
+
     Returns (rows, stats) where each row is the track dict plus "label".
     """
     if min_tracks is None:
         min_tracks = config.MIN_TRACKS_PER_PLAYLIST
+    patterns = [p.lower() for p in
+                (config.DEFAULT_EXCLUDE_PATTERNS if exclude is None else exclude)]
 
-    playlists = [p for p in library["playlists"] if len(p["tracks"]) >= min_tracks]
-    too_small = [p["title"] for p in library["playlists"] if len(p["tracks"]) < min_tracks]
+    def excluded(title):
+        return any(p in title.lower() for p in patterns)
+
+    candidates = [p for p in library["playlists"] if not excluded(p["title"])]
+    by_pattern = [p["title"] for p in library["playlists"] if excluded(p["title"])]
+
+    playlists = [p for p in candidates if len(p["tracks"]) >= min_tracks]
+    too_small = [p["title"] for p in candidates if len(p["tracks"]) < min_tracks]
 
     memberships = {}
     for pl in playlists:
@@ -138,6 +149,7 @@ def labelled_tracks(library, min_tracks=None):
 
     stats = {
         "playlists_kept": [p["title"] for p in playlists],
+        "playlists_excluded": by_pattern,
         "playlists_too_small": too_small,
         "ambiguous_tracks": ambiguous,
         "total_labelled": len(rows),
