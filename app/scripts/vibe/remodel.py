@@ -38,8 +38,9 @@ from . import config, library, model, sweep
 REVIEW_FILE = "remodel_review.csv"
 LEDGER_FILE = "moves.jsonl"
 FIELDS = ["videoId", "artist", "title", "current", "p_current",
-          "suggested", "p_suggested", "action"]
+          "suggested", "p_suggested", "runner_up", "p_runner_up", "action"]
 YES = {"m", "move", "y", "yes", "1", "x"}
+NO = {"k", "keep", "n", "no", "0"}
 
 
 def find_candidates(X, y, rows, max_current, min_target):
@@ -59,6 +60,10 @@ def find_candidates(X, y, rows, max_current, min_target):
             continue
         p_best = float(proba[i, order[0]])
         if p_current <= max_current and p_best >= min_target:
+            # The runner-up matters for judging: a suggestion at 0.7 with a
+            # 0.2 runner-up is a different claim from 0.7 against 0.65.
+            runner_up = classes[order[1]] if len(order) > 1 else ""
+            p_runner_up = float(proba[i, order[1]]) if len(order) > 1 else 0.0
             candidates.append({
                 "videoId": row["videoId"],
                 "artist": row.get("artist") or "",
@@ -67,6 +72,8 @@ def find_candidates(X, y, rows, max_current, min_target):
                 "p_current": round(p_current, 3),
                 "suggested": best,
                 "p_suggested": round(p_best, 3),
+                "runner_up": runner_up,
+                "p_runner_up": round(p_runner_up, 3),
                 "action": "",
             })
 
@@ -80,6 +87,39 @@ def churn_summary(candidates):
         pairs[(c["current"], c["suggested"])] = \
             pairs.get((c["current"], c["suggested"]), 0) + 1
     return sorted(pairs.items(), key=lambda kv: -kv[1])
+
+
+def write_grouped_report(path, candidates, total):
+    """Same proposals grouped by move, for reading rather than editing.
+
+    Judging 119 one-line rows in isolation is hard; seeing "these 5 tracks all
+    look like HARD TECH rather than ACID TECH" is a single decision you can
+    actually make, and batch-accept in the CSV.
+    """
+    groups = {}
+    for c in candidates:
+        groups.setdefault((c["current"], c["suggested"]), []).append(c)
+
+    lines = [f"# Proposed track moves\n",
+             f"{len(candidates)} of {total} filed tracks "
+             f"({len(candidates) / total:.1%}) sit in a playlist that scores "
+             f"badly while another scores well.\n",
+             "These are hypotheses from audio alone. Accept them in "
+             "`remodel_review.csv` by putting `m` in the `action` column; "
+             "blank leaves a track where it is. Nothing here has been "
+             "changed on YouTube Music.\n"]
+
+    for (src, dst), items in sorted(groups.items(), key=lambda g: -len(g[1])):
+        lines.append(f"\n## {src}  →  {dst}  ({len(items)})\n")
+        lines.append("| track | current | suggested | runner-up |")
+        lines.append("|---|---|---|---|")
+        for c in sorted(items, key=lambda c: -c["p_suggested"]):
+            lines.append(f"| {c['artist']} — {c['title']} | {c['p_current']} "
+                         f"| **{c['p_suggested']}** | {c['runner_up']} "
+                         f"{c['p_runner_up']} |")
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
 
 
 def write_review(path, candidates):
@@ -158,6 +198,13 @@ def main():
                              "(default 0.60)")
     parser.add_argument("--execute", action="store_true",
                         help="actually move; without it, apply is a dry run")
+    parser.add_argument("--accept-above", type=float, default=None,
+                        metavar="P",
+                        help="plan only: pre-fill `action` for suggestions at "
+                             "or above this confidence. Still review them")
+    parser.add_argument("--sensitivity", action="store_true",
+                        help="plan only: show how many candidates each "
+                             "threshold pair produces, and stop")
     args = parser.parse_args()
 
     config.ensure_dirs()
@@ -175,10 +222,37 @@ def main():
     if len(rows) != len(y):
         raise SystemExit(f"row mismatch: {len(rows)} rows vs {len(y)} labels")
 
+    if args.sensitivity:
+        targets = (0.4, 0.5, 0.6, 0.7, 0.8)
+        print(f"\nCandidates out of {len(rows)} filed tracks.")
+        print("Columns: suggested playlist must score at least this.")
+        print("Rows: current playlist must score at most this.\n")
+        print(f"{'':>11} " + "".join(f"{t:>9.2f}" for t in targets))
+        for max_current in (0.02, 0.05, 0.10, 0.20):
+            counts = []
+            for min_target in targets:
+                n = len(find_candidates(X, y, rows, max_current, min_target))
+                counts.append(f"{n:>9d}")
+            print(f"{max_current:>11.2f} " + "".join(counts))
+        print("\nLower `current` and higher `suggested` means fewer, safer "
+              "proposals.")
+        return
+
     if args.command == "plan":
         candidates = find_candidates(X, y, rows, args.max_current,
                                      args.min_target)
+        if args.accept_above is not None:
+            n = 0
+            for c in candidates:
+                if c["p_suggested"] >= args.accept_above:
+                    c["action"] = "m"
+                    n += 1
+            print(f"Pre-filled `action` for {n} suggestion(s) at or above "
+                  f"{args.accept_above}")
         write_review(review_path, candidates)
+        write_grouped_report(
+            os.path.join(config.REPORT_DIR, "remodel_review.md"),
+            candidates, len(rows))
         print(f"\n{len(candidates)} candidate move(s) out of {len(rows)} "
               f"tracks ({len(candidates) / len(rows):.1%})")
         print(f"Thresholds: current <= {args.max_current}, "
@@ -186,7 +260,9 @@ def main():
         print("Where the churn would land:")
         for (src, dst), n in churn_summary(candidates)[:15]:
             print(f"  {n:4d}  {src}  ->  {dst}")
-        print(f"\nReview file: {review_path}")
+        print(f"\nReview file:     {review_path}")
+        print(f"Grouped to read: "
+              f"{os.path.join(config.REPORT_DIR, 'remodel_review.md')}")
         print("Put 'm' in the `action` column to accept a move. Blank rows are "
               "left alone.")
         print("Then: python app/scripts/vibe_remodel.py apply")
@@ -195,7 +271,26 @@ def main():
     reviewed = read_review(review_path)
     moves = [r for r in reviewed
              if (r.get("action") or "").strip().lower() in YES]
-    skipped = len(reviewed) - len(moves)
+    rejected = [r for r in reviewed
+                if (r.get("action") or "").strip().lower() in NO]
+    skipped = len(reviewed) - len(moves) - len(rejected)
+
+    # The acceptance rate is the diagnostic this whole exercise exists for:
+    # accepting most proposals means the labels were noisy and the model reads
+    # the taste correctly; rejecting most means the model is misreading it.
+    # Re-measuring accuracy after moving tracks to agree with the model would
+    # be circular, so this ratio is the honest signal, not any later score.
+    judged = len(moves) + len(rejected)
+    if judged:
+        print(f"\nOf {judged} proposals you judged, you accepted "
+              f"{len(moves)} ({len(moves) / judged:.0%}) and rejected "
+              f"{len(rejected)}.")
+        if len(moves) / judged >= 0.6:
+            print("  -> mostly accepted: the filing had real noise, and the "
+                  "model is reading your genre/energy distinctions.")
+        elif len(moves) / judged <= 0.3:
+            print("  -> mostly rejected: the model is misreading your intent, "
+                  "so label noise is not what's limiting accuracy.")
 
     if not moves:
         print(f"No moves accepted ({skipped} row(s) left blank). "
