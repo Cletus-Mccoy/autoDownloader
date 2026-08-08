@@ -50,7 +50,8 @@ def load_cached(backend, exclude, min_tracks=None):
     kept = [r for r in rows if r["videoId"] in vectors]
     X = np.vstack([vectors[r["videoId"]] for r in kept])
     y = np.array([r["label"] for r in kept])
-    return X, y, stats
+    sizes = {p["title"]: len(p["tracks"]) for p in lib["playlists"]}
+    return X, y, stats, sizes
 
 
 def configurations():
@@ -107,6 +108,38 @@ def configurations():
     return configs
 
 
+def library_coverage(thresholds, sizes):
+    """Expected share of the real library that routes automatically.
+
+    The naive metric — accepted / dataset size — can't be compared across
+    samples with different class balance: a 30-per-class sample and a 16-to-200
+    one weight the same playlist differently. Weighting each playlist's
+    measured recall by its true size in the library removes that dependence,
+    so numbers from different sampling regimes mean the same thing.
+    """
+    total = sum(sizes.get(t["playlist"], 0) for t in thresholds)
+    if not total:
+        return 0.0
+    routed = sum(sizes.get(t["playlist"], 0) * t["recall"]
+                 for t in thresholds if t["threshold"] is not None)
+    return routed / total
+
+
+def cap_per_class(X, y, cap, seed):
+    """Subsample each class to at most `cap` rows, deterministically."""
+    if cap is None:
+        return X, y
+    rng = np.random.default_rng(seed)
+    keep = []
+    for label in np.unique(y):
+        idx = np.flatnonzero(y == label)
+        if len(idx) > cap:
+            idx = rng.choice(idx, cap, replace=False)
+        keep.extend(idx.tolist())
+    keep = np.array(sorted(keep))
+    return X[keep], y[keep]
+
+
 def score(model, X, y, folds, target):
     cv = StratifiedKFold(n_splits=folds, shuffle=True,
                          random_state=config.RANDOM_SEED)
@@ -123,6 +156,7 @@ def score(model, X, y, folds, target):
         "routable": len(routable),
         "n_classes": len(classes),
         "coverage": sum(t["accepted"] for t in routable) / len(y),
+        "thresholds": thresholds,
         "playlists": sorted(t["playlist"] for t in routable),
     }
 
@@ -134,9 +168,14 @@ def main():
                         metavar="SUBSTRING")
     parser.add_argument("--target-precision", type=float, default=0.90)
     parser.add_argument("--min-tracks", type=int, default=None)
+    parser.add_argument("--caps", nargs="*", type=int, default=None,
+                        metavar="N",
+                        help="instead of the full config sweep, test whether "
+                             "more data per playlist helps: cap each class at "
+                             "each N and report the same configs. 0 means no cap")
     args = parser.parse_args()
 
-    X, y, stats = load_cached(args.backend, args.exclude, args.min_tracks)
+    X, y, stats, sizes = load_cached(args.backend, args.exclude, args.min_tracks)
     counts = np.bincount(np.unique(y, return_inverse=True)[1])
     X, y, _, thin = probe.drop_thin_classes(X, y, list(range(len(y))))
     folds = max(2, min(5, int(np.bincount(
@@ -148,6 +187,26 @@ def main():
         print(f"dropped thin: {', '.join(f'{l} ({c})' for l, c in thin)}")
     print(f"smallest class {counts.min()}, largest {counts.max()}\n")
 
+    if args.caps:
+        print("Does more data per playlist help? libcov weights each "
+              "playlist's recall by its real size, so caps are comparable.\n")
+        print(f"{'cap':>5} {'n':>6} {'config':<26} {'routable':>9} "
+              f"{'libcov':>7} {'top1':>6} {'top3':>6}")
+        for cap in args.caps:
+            cap = None if cap == 0 else cap
+            Xc, yc = cap_per_class(X, y, cap, config.RANDOM_SEED)
+            f = max(2, min(5, int(np.bincount(
+                np.unique(yc, return_inverse=True)[1]).min())))
+            for name, factory in configurations():
+                if "logreg C=10.0" not in name and "logreg C=100.0" not in name:
+                    continue
+                row = score(factory(), Xc, yc, f, args.target_precision)
+                print(f"{str(cap or 'all'):>5} {len(yc):>6} {name:<26} "
+                      f"{row['routable']:>4}/{row['n_classes']:<4} "
+                      f"{library_coverage(row['thresholds'], sizes):>6.1%} "
+                      f"{row['top1']:>5.1%} {row['top3']:>5.1%}")
+        return
+
     results = []
     for name, factory in configurations():
         try:
@@ -157,8 +216,8 @@ def main():
             continue
         results.append((name, row))
         print(f"  {row['routable']:2d}/{row['n_classes']} routable  "
-              f"cov {row['coverage']:5.1%}  top1 {row['top1']:5.1%}  "
-              f"top3 {row['top3']:5.1%}   {name}")
+              f"libcov {library_coverage(row['thresholds'], sizes):5.1%}  "
+              f"top1 {row['top1']:5.1%}  top3 {row['top3']:5.1%}   {name}")
 
     print("\n" + "=" * 74)
     print("RANKED by routable playlists, then coverage")
