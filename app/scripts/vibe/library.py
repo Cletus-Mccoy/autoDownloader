@@ -22,6 +22,10 @@ def _track(item):
     artists = item.get("artists") or []
     return {
         "videoId": video_id,
+        # Removing a track from a playlist needs its setVideoId, which is
+        # per-placement and only available from get_playlist. Captured here so
+        # a future cleanup step doesn't require a second full fetch.
+        "setVideoId": item.get("setVideoId"),
         "title": item.get("title"),
         "artist": ", ".join(a.get("name", "") for a in artists if a.get("name")),
         "duration_seconds": item.get("duration_seconds"),
