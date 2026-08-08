@@ -32,8 +32,34 @@ def _tracks(items):
     return [t for t in (_track(i) for i in items or []) if t]
 
 
+class AuthError(RuntimeError):
+    """Stored credentials exist but YouTube treats the session as signed out."""
+
+
+def check_auth(ytmusic):
+    """Fail fast when the stored cookies have been revoked.
+
+    Revoked cookies don't produce an error — YouTube quietly serves the
+    signed-out page, so get_library_playlists returns [] and the failure only
+    surfaces later as an opaque KeyError from deep inside ytmusicapi.
+    """
+    try:
+        account = ytmusic.get_account_info()
+    except Exception as e:
+        raise AuthError(
+            "YouTube Music rejected the stored session - the cookies in "
+            "headers_auth.json are expired or revoked.\n"
+            "Re-authenticate: start the service "
+            "(docker compose -f app/docker-compose.yml up -d), open "
+            "http://localhost:8080, and paste fresh request headers from a "
+            "signed-in music.youtube.com tab."
+        ) from e
+    print(f"Signed in as {account.get('accountName', '?')}")
+
+
 def fetch_library():
     ytmusic = headers_to_ytmusic()
+    check_auth(ytmusic)
 
     print("Fetching library playlists...")
     playlists = []

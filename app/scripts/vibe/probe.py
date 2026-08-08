@@ -283,7 +283,10 @@ def main():
 
     config.ensure_dirs()
 
-    lib = library.load_library(refresh=args.refresh_library)
+    try:
+        lib = library.load_library(refresh=args.refresh_library)
+    except library.AuthError as e:
+        raise SystemExit(f"\n{e}")
     rows, stats = library.labelled_tracks(lib, min_tracks=args.min_tracks)
     min_tracks = args.min_tracks or config.MIN_TRACKS_PER_PLAYLIST
 
