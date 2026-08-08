@@ -90,7 +90,7 @@ def _load_effnet():
     return _effnet_model
 
 
-def _effnet_embed(path):
+def _effnet_frames(path):
     from essentia.standard import MonoLoader
 
     model = _load_effnet()
@@ -98,11 +98,35 @@ def _effnet_embed(path):
                        resampleQuality=4)()
     if audio.size < config.SAMPLE_RATE:
         return None
-    # (frames, 1280) -> one vector per track
-    return np.asarray(model(audio)).mean(axis=0).astype(np.float32)
+    return np.asarray(model(audio))  # (frames, 1280)
 
 
-BACKENDS = {"mfcc": _mfcc_embed, "effnet": _effnet_embed}
+def _effnet_embed(path):
+    """Mean over frames — one 1280-dim vector per track."""
+    frames = _effnet_frames(path)
+    return None if frames is None else frames.mean(axis=0).astype(np.float32)
+
+
+def _effnet_meanstd_embed(path):
+    """Mean and standard deviation over frames — 2560-dim.
+
+    Mean alone describes the average moment of a track. The std says how much
+    it moves: a droning techno loop and a track with a breakdown can share a
+    mean and differ entirely in how static they are, which is exactly the kind
+    of distinction the confused playlist pairs turn on.
+    """
+    frames = _effnet_frames(path)
+    if frames is None:
+        return None
+    return np.concatenate([frames.mean(axis=0),
+                           frames.std(axis=0)]).astype(np.float32)
+
+
+BACKENDS = {
+    "mfcc": _mfcc_embed,
+    "effnet": _effnet_embed,
+    "effnet-meanstd": _effnet_meanstd_embed,
+}
 
 
 def embed_tracks(paths_by_id, backend="mfcc"):
