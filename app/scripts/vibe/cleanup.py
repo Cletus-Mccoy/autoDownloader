@@ -44,9 +44,20 @@ def _require_set_video_ids(dupes):
     )
 
 
-def build_rows(lib, dupes):
-    """Review rows for tiers B and C. Tier A is derived at apply time."""
+def build_rows(lib, dupes, prefill=None):
+    """Review rows for tiers B and C. Tier A is derived at apply time.
+
+    prefill picks the "first" or "last" choice for every row. It's resolved
+    from the real choice list here — counting separators back out of the
+    rendered `choices` string breaks on titles that contain them, e.g.
+    "Kisses (feat. bbyclose)".
+    """
     rows = []
+
+    def keep_for(choices):
+        if prefill is None:
+            return ""
+        return "1" if prefill == "first" else str(len(choices))
 
     for entry in sorted(dupes["across"], key=lambda r: _label(r["track"]).lower()):
         choices = entry["playlists"]
@@ -56,7 +67,7 @@ def build_rows(lib, dupes):
             "artist": entry["track"].get("artist") or "",
             "title": entry["track"].get("title") or "",
             "choices": " | ".join(f"{i}) {c}" for i, c in enumerate(choices, 1)),
-            "keep": "",
+            "keep": keep_for(choices),
             "note": "keep it in which playlist? removed from the others",
         })
 
@@ -73,7 +84,7 @@ def build_rows(lib, dupes):
             "choices": " | ".join(
                 f"{i}) {video_id} in {', '.join(info['playlists'])}"
                 for i, (video_id, info) in enumerate(copies, 1)),
-            "keep": "",
+            "keep": keep_for(copies),
             "note": ("redundant copies in one playlist" if same_playlist else
                      "WARNING: copies live in different playlists — removing "
                      "the loser drops the song from that playlist entirely"),
@@ -230,6 +241,11 @@ def main():
                         help="actually remove; without it, apply is a dry run")
     parser.add_argument("--skip-tier-a", action="store_true",
                         help="leave the in-playlist duplicates alone")
+    parser.add_argument("--prefill", choices=["first", "last"], default=None,
+                        help="plan only: pre-fill every `keep` with the first "
+                             "or last choice instead of leaving it blank. "
+                             "Playlists sort by their number prefix, so `last` "
+                             "keeps the highest-numbered playlist")
     args = parser.parse_args()
 
     config.ensure_dirs()
@@ -242,7 +258,10 @@ def main():
 
     if args.command == "plan":
         _require_set_video_ids(dupes)
-        rows = build_rows(lib, dupes)
+        rows = build_rows(lib, dupes, prefill=args.prefill)
+        if args.prefill:
+            print(f"Pre-filled every `keep` with the {args.prefill} choice — "
+                  "review before applying.")
         write_review(review_path, rows)
         print(f"\nTier A (no decision needed): "
               f"{sum(r['count'] - 1 for r in dupes['within'])} removals")
