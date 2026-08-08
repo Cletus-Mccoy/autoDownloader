@@ -54,6 +54,64 @@ def load_cached(backend, exclude, min_tracks=None):
     return X, y, stats, sizes
 
 
+def load_combined(backends, exclude, min_tracks=None):
+    """Concatenate several embedding caches, keeping only tracks in all of them.
+
+    Returns (X, y, sizes, split) where split is the column index where the
+    second block starts — the blocks need different scaling, so the pipeline
+    has to know where the boundary is.
+    """
+    lib = library.load_library(refresh=False)
+    rows, _ = library.labelled_tracks(lib, min_tracks=min_tracks,
+                                      exclude=exclude)
+
+    caches = []
+    for backend in backends:
+        path = os.path.join(config.EMBED_DIR, f"{backend}.npz")
+        if not os.path.exists(path):
+            raise SystemExit(f"No embedding cache at {path}")
+        with np.load(path) as data:
+            caches.append({k: data[k] for k in data.files})
+
+    kept = [r for r in rows
+            if all(r["videoId"] in cache for cache in caches)]
+    if not kept:
+        raise SystemExit("no tracks have all requested embeddings yet")
+
+    blocks = [np.vstack([cache[r["videoId"]] for r in kept])
+              for cache in caches]
+    X = np.hstack(blocks)
+    y = np.array([r["label"] for r in kept])
+    sizes = {p["title"]: len(p["tracks"]) for p in lib["playlists"]}
+    return X, y, sizes, blocks[0].shape[1]
+
+
+def combined_model(split, energy_weight, c=10.0):
+    """Normalise both blocks to unit norm, then weight the second one.
+
+    The energy block is 18 raw quantities on incompatible scales (bpm ~120,
+    band ratios ~0.3), so it's standardised first. But standardising alone
+    leaves entries near 1.0 against embedding entries near 1/sqrt(1280) —
+    the small block then dominates whatever weight you pick, which is what
+    made an early version of this sweep collapse from 58% to 43% top-1.
+
+    L2-normalising *both* blocks makes weight mean what it says: 1.0 gives the
+    two blocks equal say, 0.25 gives the energy block a quarter of the pull.
+    """
+    from sklearn.compose import ColumnTransformer
+    from sklearn.preprocessing import FunctionTransformer, StandardScaler
+
+    scale = FunctionTransformer(lambda a: a * energy_weight, validate=False)
+    return make_pipeline(
+        ColumnTransformer([
+            ("embedding", Normalizer(), slice(0, split)),
+            ("energy", make_pipeline(StandardScaler(), Normalizer(), scale),
+             slice(split, None)),
+        ]),
+        LogisticRegression(C=c, max_iter=4000, class_weight="balanced"),
+    )
+
+
 def configurations():
     """Each entry is (name, factory) so the pipeline is rebuilt per fold."""
     configs = []
@@ -168,12 +226,43 @@ def main():
                         metavar="SUBSTRING")
     parser.add_argument("--target-precision", type=float, default=0.90)
     parser.add_argument("--min-tracks", type=int, default=None)
+    parser.add_argument("--combine", nargs="*", default=None,
+                        metavar="BACKEND",
+                        help="concatenate these embedding caches (e.g. "
+                             "--combine effnet energy) and sweep how loudly "
+                             "the second block speaks")
     parser.add_argument("--caps", nargs="*", type=int, default=None,
                         metavar="N",
                         help="instead of the full config sweep, test whether "
                              "more data per playlist helps: cap each class at "
                              "each N and report the same configs. 0 means no cap")
     args = parser.parse_args()
+
+    if args.combine:
+        X, y, sizes, split = load_combined(args.combine, args.exclude,
+                                           args.min_tracks)
+        folds = max(2, min(5, int(np.bincount(
+            np.unique(y, return_inverse=True)[1]).min())))
+        print(f"{len(y)} tracks with all of {', '.join(args.combine)}; "
+              f"{split} + {X.shape[1] - split} dims, {folds}-fold CV\n")
+        print(f"{'energy weight':>14} {'C':>6} {'routable':>9} {'libcov':>7} "
+              f"{'top1':>6} {'top3':>6}")
+        baseline = None
+        for weight in (0.0, 0.25, 0.5, 1.0, 2.0, 4.0):
+            for c in (10.0, 100.0):
+                row = score(combined_model(split, weight, c), X, y, folds,
+                            args.target_precision)
+                cov = library_coverage(row["thresholds"], sizes)
+                if weight == 0.0 and c == 10.0:
+                    baseline = (row["routable"], cov, row["top1"])
+                print(f"{weight:>14.2f} {c:>6.0f} "
+                      f"{row['routable']:>4}/{row['n_classes']:<4} "
+                      f"{cov:>6.1%} {row['top1']:>5.1%} {row['top3']:>5.1%}")
+        if baseline:
+            print(f"\nweight 0.0 is embedding-only (energy zeroed out), "
+                  f"so it is the control: {baseline[0]} routable, "
+                  f"{baseline[1]:.1%} libcov, {baseline[2]:.1%} top1")
+        return
 
     X, y, stats, sizes = load_cached(args.backend, args.exclude, args.min_tracks)
     counts = np.bincount(np.unique(y, return_inverse=True)[1])
