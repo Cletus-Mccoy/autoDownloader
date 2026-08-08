@@ -2,7 +2,9 @@ import json
 import os
 from ytmusicapi import YTMusic
 
-AUTH_DIR = "/app/data/auth"
+# Container layout by default; overridable so tooling can run outside Docker
+# against the mounted ./app/data/auth directory.
+AUTH_DIR = os.getenv("YTM_AUTH_DIR", "/app/data/auth")
 HEADERS_AUTH_FILE = f"{AUTH_DIR}/headers_auth.json"
 OAUTH_FILE = f"{AUTH_DIR}/oauth.json"
 OAUTH_CLIENT_FILE = f"{AUTH_DIR}/oauth_client.json"

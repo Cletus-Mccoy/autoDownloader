@@ -1,0 +1,9 @@
+# Extra deps for the vibe sorter (scripts/vibe). Kept out of requirements.txt
+# so the downloader image stays small — install only where the probe runs.
+numpy
+scikit-learn
+librosa
+soundfile
+
+# Optional, for the stronger `effnet` embedding backend:
+# essentia-tensorflow
