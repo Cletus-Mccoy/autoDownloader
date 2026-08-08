@@ -26,6 +26,10 @@ from . import config
 
 _effnet_model = None
 
+# Embedding runs can last hours; checkpoint often enough that a kill costs
+# minutes, rarely enough that compression isn't the bottleneck.
+CHECKPOINT_EVERY = 100
+
 
 def _stats(matrix):
     """Mean and std across time for a (features, frames) matrix."""
@@ -122,10 +126,90 @@ def _effnet_meanstd_embed(path):
                            frames.std(axis=0)]).astype(np.float32)
 
 
+ENERGY_FEATURES = [
+    "bpm", "beats_confidence", "danceability", "onset_rate",
+    "loudness_ebu", "dynamic_complexity", "dynamic_range_db",
+    "rms_mean", "rms_std", "flux_mean", "flux_std",
+    "centroid_mean", "centroid_std", "complexity_mean",
+    "band_low", "band_mid", "band_high", "crest_factor",
+]
+
+
+def _energy_embed(path):
+    """Explicit energy and rhythm descriptors — 18 dims, via essentia.
+
+    discogs-effnet is a *genre* model: it's trained on Discogs style labels, so
+    energy is only implicit in it. When playlists are sorted by genre AND
+    energy, that missing axis is exactly what collapses pairs like INDUSTRIAL
+    TECHNO vs MINIMAL DANCE MUSIC, or ACID TECH vs HARD TECH — same genre
+    family, different intensity. These features name it directly: tempo, how
+    danceable, how loud, how much the loudness moves, how dense the onsets are,
+    and where the energy sits across the spectrum.
+
+    Meant to be concatenated with an effnet vector, not used alone.
+    """
+    import essentia
+    import essentia.standard as es
+
+    essentia.log.warningActive = False
+    audio = es.MonoLoader(filename=path, sampleRate=config.SAMPLE_RATE,
+                          resampleQuality=4)()
+    if audio.size < config.SAMPLE_RATE * 2:
+        return None
+
+    bpm, _beats, beats_conf, _est, _intervals = es.RhythmExtractor2013(
+        method="multifeature")(audio)
+    danceability = es.Danceability(sampleRate=config.SAMPLE_RATE)(audio)[0]
+    onset_rate = es.OnsetRate()(audio)[1]
+    loudness_ebu = es.LoudnessEBUR128(sampleRate=config.SAMPLE_RATE)(
+        np.vstack([audio, audio]).T)[2]
+    dyn_complexity, _loud = es.DynamicComplexity(
+        sampleRate=config.SAMPLE_RATE)(audio)
+
+    spectrum, windowing = es.Spectrum(), es.Windowing(type="hann")
+    centroid = es.Centroid(range=config.SAMPLE_RATE / 2)
+    flux, complexity = es.Flux(), es.SpectralComplexity()
+    bands = [es.EnergyBandRatio(startFrequency=lo, stopFrequency=hi,
+                                sampleRate=config.SAMPLE_RATE)
+             for lo, hi in ((20, 250), (250, 2000), (2000, 8000))]
+
+    rms = es.RMS()
+    rms_v, flux_v, cent_v, cplx_v, band_v = [], [], [], [], []
+    for frame in es.FrameGenerator(audio, frameSize=2048, hopSize=1024):
+        windowed = windowing(frame)
+        spec = spectrum(windowed)
+        rms_v.append(rms(frame))
+        flux_v.append(flux(spec))
+        cent_v.append(centroid(spec))
+        cplx_v.append(complexity(spec))
+        band_v.append([b(spec) for b in bands])
+
+    rms_v = np.asarray(rms_v)
+    band_v = np.asarray(band_v)
+    peak = float(np.abs(audio).max()) or 1e-9
+    rms_overall = float(np.sqrt(np.mean(audio.astype(np.float64) ** 2))) or 1e-9
+    quiet, loud = np.percentile(rms_v, [5, 95])
+
+    values = [
+        float(bpm), float(beats_conf), float(danceability), float(onset_rate),
+        float(loudness_ebu), float(dyn_complexity),
+        20.0 * np.log10(max(loud, 1e-9) / max(quiet, 1e-9)),
+        float(rms_v.mean()), float(rms_v.std()),
+        float(np.mean(flux_v)), float(np.std(flux_v)),
+        float(np.mean(cent_v)), float(np.std(cent_v)),
+        float(np.mean(cplx_v)),
+        *[float(v) for v in band_v.mean(axis=0)],
+        peak / rms_overall,
+    ]
+    vector = np.asarray(values, dtype=np.float32)
+    return None if not np.isfinite(vector).all() else vector
+
+
 BACKENDS = {
     "mfcc": _mfcc_embed,
     "effnet": _effnet_embed,
     "effnet-meanstd": _effnet_meanstd_embed,
+    "energy": _energy_embed,
 }
 
 
@@ -153,6 +237,11 @@ def embed_tracks(paths_by_id, backend="mfcc", prune_audio=False):
     print(f"Embeddings ({backend}): {len(paths_by_id) - len(missing)} cached, "
           f"{len(missing)} to compute")
 
+    def save():
+        tmp = cache_path + ".tmp.npz"
+        np.savez_compressed(tmp, **cache)
+        os.replace(tmp, cache_path)
+
     failed = 0
     for i, video_id in enumerate(missing, 1):
         try:
@@ -167,11 +256,14 @@ def embed_tracks(paths_by_id, backend="mfcc", prune_audio=False):
         cache[video_id] = vector
         if i % 25 == 0 or i == len(missing):
             print(f"  [{i}/{len(missing)}] embedded")
+        # Checkpoint: embedding thousands of tracks takes hours, and saving
+        # only at the end means a kill or a crash throws all of it away.
+        # Writing via a temp file plus rename keeps the cache always valid.
+        if i % CHECKPOINT_EVERY == 0:
+            save()
 
     if missing:
-        tmp = cache_path + ".tmp.npz"
-        np.savez_compressed(tmp, **cache)
-        os.replace(tmp, cache_path)
+        save()
 
     # Only after the vectors are durably on disk — pruning first would risk
     # losing both the audio and the embedding if this run died.
