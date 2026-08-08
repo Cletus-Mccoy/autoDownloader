@@ -11,6 +11,7 @@ cookies file) rather than introducing a second credential route.
 import os
 import shutil
 import subprocess
+import sys
 import threading
 
 from concurrent.futures import ThreadPoolExecutor
@@ -20,6 +21,26 @@ from download import get_cookie_header, write_cookies_file
 from . import config
 
 _print_lock = threading.Lock()
+
+
+def yt_dlp_binary():
+    """Prefer the yt-dlp installed alongside this interpreter.
+
+    Whatever is first on PATH is often an unrelated, much older install (a
+    stale conda one here), and an out-of-date yt-dlp fails YouTube's signature
+    challenge — it reports "Requested format is not available" and only
+    storyboard images remain. The venv copy is the one kept current alongside
+    yt-dlp-ejs, so resolve that first.
+    """
+    scripts_dir = os.path.dirname(sys.executable)
+    for name in ("yt-dlp.exe", "yt-dlp"):
+        candidate = os.path.join(scripts_dir, name)
+        if os.path.exists(candidate):
+            return candidate
+    found = shutil.which("yt-dlp")
+    if not found:
+        raise RuntimeError("yt-dlp not found next to the interpreter or on PATH")
+    return found
 
 
 def snippet_path(video_id):
@@ -57,7 +78,7 @@ def fetch_one(track, cookies_path=None):
 
     start, end = _window(track.get("duration_seconds"))
     cmd = [
-        "yt-dlp",
+        yt_dlp_binary(),
         "-f", "bestaudio/best",
         "--no-playlist",
         "--download-sections", f"*{start}-{end}",
@@ -92,8 +113,10 @@ def fetch_many(tracks, workers=3):
     Workers default low on purpose: YouTube throttles parallel clients, and a
     rate-limited run poisons the cache with failures rather than going faster.
     """
-    if not shutil.which("yt-dlp"):
-        raise RuntimeError("yt-dlp not found on PATH")
+    binary = yt_dlp_binary()
+    version = subprocess.run([binary, "--version"], capture_output=True,
+                             text=True).stdout.strip()
+    print(f"Using {binary} ({version})")
 
     config.ensure_dirs()
     cookies_path = _prepare_cookies()
