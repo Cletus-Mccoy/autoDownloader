@@ -286,6 +286,15 @@ def main():
                         help="precision the routing thresholds aim for")
     parser.add_argument("--skip-fetch", action="store_true",
                         help="use only snippets already cached")
+    parser.add_argument("--max-new-audio", type=int, default=None,
+                        metavar="N",
+                        help="cap new downloads this run; the rest are deferred "
+                             "to a later run. Keeps a scheduled job bounded")
+    parser.add_argument("--prune-audio", action="store_true",
+                        help="delete each snippet once its vector is cached. "
+                             "Vectors are ~600x smaller than the audio, so disk "
+                             "use stays flat; switching backend later means "
+                             "re-downloading")
     args = parser.parse_args()
 
     config.ensure_dirs()
@@ -317,9 +326,11 @@ def main():
                  for t in sampled if audio.is_cached(t["videoId"])}
         print(f"Using {len(paths)} cached snippets (--skip-fetch)")
     else:
-        paths = audio.fetch_many(sampled, workers=args.workers)
+        paths = audio.fetch_many(sampled, workers=args.workers,
+                                 max_new=args.max_new_audio)
 
-    vectors = embed.embed_tracks(paths, backend=args.backend)
+    vectors = embed.embed_tracks(paths, backend=args.backend,
+                                 prune_audio=args.prune_audio)
 
     X, y, kept = build_matrix(sampled, vectors)
     X, y, kept, thin = drop_thin_classes(X, y, kept)

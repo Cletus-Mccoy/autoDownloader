@@ -129,8 +129,14 @@ BACKENDS = {
 }
 
 
-def embed_tracks(paths_by_id, backend="mfcc"):
-    """Embed every cached snippet. Returns {videoId: vector}."""
+def embed_tracks(paths_by_id, backend="mfcc", prune_audio=False):
+    """Embed every cached snippet. Returns {videoId: vector}.
+
+    prune_audio deletes each snippet once its vector is safely cached. The
+    vectors are ~600x smaller than the audio, so this keeps a scheduled job's
+    disk use flat — at the cost of a re-download if you later switch to a
+    different embedding backend.
+    """
     if backend not in BACKENDS:
         raise ValueError(f"unknown backend {backend!r}; "
                          f"choose from {sorted(BACKENDS)}")
@@ -166,6 +172,21 @@ def embed_tracks(paths_by_id, backend="mfcc"):
         tmp = cache_path + ".tmp.npz"
         np.savez_compressed(tmp, **cache)
         os.replace(tmp, cache_path)
+
+    # Only after the vectors are durably on disk — pruning first would risk
+    # losing both the audio and the embedding if this run died.
+    if prune_audio:
+        freed = 0
+        for video_id in missing:
+            if video_id not in cache:
+                continue
+            path = paths_by_id[video_id]
+            try:
+                freed += os.path.getsize(path)
+                os.remove(path)
+            except OSError:
+                pass
+        print(f"  pruned {freed / 1e6:.0f} MB of audio (vectors kept)")
 
     result = {vid: cache[vid] for vid in paths_by_id if vid in cache}
     if failed:

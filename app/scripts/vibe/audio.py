@@ -107,8 +107,16 @@ def fetch_one(track, cookies_path=None):
     return snippet_path(video_id) if is_cached(video_id) else None
 
 
-def fetch_many(tracks, workers=3):
+def fetch_many(tracks, workers=3, max_new=None):
     """Fetch snippets for many tracks. Returns {videoId: path} for successes.
+
+    Only videoIds without a cached snippet are fetched, so a repeat run costs
+    nothing for material already seen — steady state is one download per newly
+    liked track, ever.
+
+    max_new caps how many new downloads a single run may make, so a scheduled
+    job can't balloon. What gets skipped is reported rather than silently
+    dropped; the next run picks it up.
 
     Workers default low on purpose: YouTube throttles parallel clients, and a
     rate-limited run poisons the cache with failures rather than going faster.
@@ -124,8 +132,17 @@ def fetch_many(tracks, workers=3):
     pending = [t for t in tracks if not is_cached(t["videoId"])]
     cached = {t["videoId"]: snippet_path(t["videoId"])
               for t in tracks if is_cached(t["videoId"])}
+
+    deferred = 0
+    if max_new is not None and len(pending) > max_new:
+        deferred = len(pending) - max_new
+        pending = pending[:max_new]
+
     print(f"Audio: {len(cached)} cached, {len(pending)} to fetch "
           f"({workers} workers)")
+    if deferred:
+        print(f"  {deferred} deferred by --max-new-audio; a later run picks "
+              "them up")
 
     results = dict(cached)
     done = 0
