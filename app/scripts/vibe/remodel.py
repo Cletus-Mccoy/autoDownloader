@@ -17,6 +17,12 @@ a mistake with total confidence. **These are hypotheses, not corrections** —
 which is why the blank `action` column means "leave it alone", and why an
 unreviewed file moves nothing.
 
+In the `action` column: `m` accepts the suggestion, `r` accepts the runner-up
+instead (the second guess is sometimes the better home), `k` records a
+rejection, blank leaves the track alone. Marking `k` rather than leaving blank
+is worth the keystroke — the accept/reject ratio is what tells you whether the
+model reads your taste or misreads it.
+
     plan    writes remodel_review.csv, and a summary of where churn would land
     apply   executes it — dry run unless --execute
 
@@ -40,6 +46,7 @@ LEDGER_FILE = "moves.jsonl"
 FIELDS = ["videoId", "artist", "title", "current", "p_current",
           "suggested", "p_suggested", "runner_up", "p_runner_up", "action"]
 YES = {"m", "move", "y", "yes", "1", "x"}
+RUNNER = {"r", "runner", "2"}
 NO = {"k", "keep", "n", "no", "0"}
 
 
@@ -154,7 +161,7 @@ def execute(moves, lib, ledger_path):
     done = failed = 0
     with open(ledger_path, "a", encoding="utf-8") as ledger:
         for move in moves:
-            target, source = move["suggested"], move["current"]
+            target, source = move["target"], move["current"]
             video_id = move["videoId"]
             target_id, source_id = ids.get(target), ids.get(source)
             set_video_id = set_ids.get((source, video_id))
@@ -263,16 +270,26 @@ def main():
         print(f"\nReview file:     {review_path}")
         print(f"Grouped to read: "
               f"{os.path.join(config.REPORT_DIR, 'remodel_review.md')}")
-        print("Put 'm' in the `action` column to accept a move. Blank rows are "
-              "left alone.")
+        print("`action` column:  m = accept suggestion,  r = accept runner-up,"
+              "  k = reject,  blank = leave alone")
+        print("Marking rejections with 'k' is worth it: the accept/reject "
+              "ratio is the diagnostic.")
         print("Then: python app/scripts/vibe_remodel.py apply")
         return
 
     reviewed = read_review(review_path)
-    moves = [r for r in reviewed
-             if (r.get("action") or "").strip().lower() in YES]
-    rejected = [r for r in reviewed
-                if (r.get("action") or "").strip().lower() in NO]
+    moves, rejected = [], []
+    for row in reviewed:
+        action = (row.get("action") or "").strip().lower()
+        if action in YES:
+            moves.append({**row, "target": row["suggested"]})
+        elif action in RUNNER:
+            # Sometimes the second guess is the right one — Nujabes filed under
+            # techno was suggested as hip hop with lo-fi as runner-up, and
+            # lo-fi is the better home.
+            moves.append({**row, "target": row["runner_up"]})
+        elif action in NO:
+            rejected.append(row)
     skipped = len(reviewed) - len(moves) - len(rejected)
 
     # The acceptance rate is the diagnostic this whole exercise exists for:
@@ -300,7 +317,7 @@ def main():
     print(f"\n{len(moves)} move(s) accepted, {skipped} left alone\n")
     for move in moves:
         print(f"  {move['artist']} — {move['title']}")
-        print(f"      {move['current']}  ->  {move['suggested']}  "
+        print(f"      {move['current']}  ->  {move['target']}  "
               f"(p {move['p_current']} -> {move['p_suggested']})")
 
     if not args.execute:
