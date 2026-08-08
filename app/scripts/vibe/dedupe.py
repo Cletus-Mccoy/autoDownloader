@@ -56,8 +56,11 @@ def find_duplicates(lib, exclude=None):
             placements.setdefault(track["videoId"], []).append((pl["title"], track))
         for video_id, entries in counts.items():
             if len(entries) > 1:
+                # Keep every entry: each placement has its own setVideoId, and
+                # removing a copy needs the specific one.
                 within.append({"playlist": pl["title"], "videoId": video_id,
-                               "track": entries[0], "count": len(entries)})
+                               "track": entries[0], "entries": entries,
+                               "count": len(entries)})
         seen_in_playlist[pl["title"]] = counts
 
     across = []
@@ -89,6 +92,7 @@ def find_duplicates(lib, exclude=None):
     reuploads.sort(key=lambda g: -len(g["copies"]))
 
     return {"within": within, "across": across, "reuploads": reuploads,
+            "placements": placements,
             "playlists": [p["title"] for p in playlists]}
 
 
