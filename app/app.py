@@ -237,7 +237,11 @@ def auth_status():
         return jsonify({"authenticated": False, "reason": "no_credentials", "method": None})
     try:
         ytmusic = headers_to_ytmusic()
-        ytmusic.get_library_playlists(limit=1)
+        # Revoked cookies don't raise: YouTube serves the signed-out page and
+        # get_library_playlists() just returns [], which read as "authenticated".
+        # get_account_info() fails loudly when signed out, so it's the only
+        # reliable check.
+        ytmusic.get_account_info()
         return jsonify({"authenticated": True, "method": method})
     except Exception:
         return jsonify({"authenticated": False, "reason": "expired", "method": method})

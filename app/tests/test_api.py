@@ -20,6 +20,30 @@ def test_auth_status_unauthenticated(client):
     assert data["reason"] == "no_credentials"
 
 
+def test_auth_status_detects_revoked_session(client, monkeypatch):
+    """Credentials on disk but the session revoked must report expired.
+
+    A revoked cookie doesn't raise — YouTube returns the signed-out page, so
+    get_library_playlists() yields [] and the old check called that success.
+    """
+    from scripts import ytmusic_auth
+
+    class SignedOut:
+        def get_library_playlists(self, limit=1):
+            return []  # what a revoked session actually returns
+
+        def get_account_info(self):
+            raise KeyError("activeAccountHeaderRenderer")
+
+    monkeypatch.setattr(ytmusic_auth, "has_headers", lambda: True)
+    monkeypatch.setattr(ytmusic_auth, "headers_to_ytmusic", lambda: SignedOut())
+
+    data = client.get("/auth/status").get_json()
+    assert data["authenticated"] is False
+    assert data["reason"] == "expired"
+    assert data["method"] == "headers"
+
+
 def test_auth_headers_missing_body_returns_400(client):
     resp = client.post("/auth/headers", data={})
     assert resp.status_code == 400
