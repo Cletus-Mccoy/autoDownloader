@@ -15,7 +15,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY ./app.py /app/app.py
-COPY ./templates/index.html /app/templates/index.html
+# Whole directory, not index.html alone — the sorter's page lives here too and
+# naming files one by one silently 404s anything new.
+COPY ./templates/ /app/templates
 COPY ./scripts/ /app/scripts
 COPY ./tests/ /app/tests
 COPY ./pytest.ini /app/pytest.ini
@@ -23,8 +25,13 @@ COPY ./pytest.ini /app/pytest.ini
 RUN mkdir -p /app/data/auth /app/data/logs /app/downloads
 
 COPY ./requirements.txt /app/requirements.txt
+COPY ./requirements-vibe.txt /app/requirements-vibe.txt
 
-RUN pip install --no-cache-dir -r /app/requirements.txt
+# The sorter runs on the schedule too, so its dependencies belong in the image.
+# essentia-tensorflow is the bulk of it; it bundles TensorFlow and is what
+# turns audio into embeddings.
+RUN pip install --no-cache-dir -r /app/requirements.txt \
+    && pip install --no-cache-dir -r /app/requirements-vibe.txt
 
 RUN apt-get autoremove -y && apt-get clean -y
 

@@ -27,6 +27,10 @@ OAUTH_CLIENT_FILE = f"{AUTH_DIR}/oauth_client.json"
 CRON_FILE        = "/etc/cron.d/ytmusic"
 CRON_SUFFIX      = "root python /app/scripts/scheduler.py >> /var/log/cron.log 2>&1"
 SELECTION_FILE   = f"{DATA_DIR}/playlist_selection.json"
+VIBE_DIR         = f"{DATA_DIR}/vibe"
+SORT_QUEUE_FILE  = f"{VIBE_DIR}/sort_queue.json"
+VIBE_LIBRARY_FILE = f"{VIBE_DIR}/library.json"
+DECISIONS_FILE   = f"{VIBE_DIR}/reports/decisions.jsonl"
 MUSIC_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aac", ".wma"}
 UNSUPPORTED_TITLES = {"Liked Music", "Episodes for Later"}
 
@@ -587,6 +591,125 @@ def set_cron():
         subprocess.run(["service", "cron", "reload"], capture_output=True)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    return jsonify({"ok": True})
+
+
+# ── Vibe sorter: review queue for tracks the model wasn't confident about ────
+
+def _read_json(path, default):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def _write_queue(payload):
+    """Atomic write — same reason as _persist_run: bind mounts drop in-place
+    overwrites, and a half-written queue would lose pending tracks."""
+    os.makedirs(VIBE_DIR, exist_ok=True)
+    tmp = SORT_QUEUE_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, SORT_QUEUE_FILE)
+
+
+def _sorter_excludes():
+    """The exclusion patterns the model was trained with.
+
+    Kept in step with training so the UI can't offer a destination the sorter
+    doesn't know about — and so it never offers YouTube's own generated mixes,
+    whose items have no setVideoId and can't be edited at all.
+    """
+    meta = _read_json(f"{VIBE_DIR}/thresholds.json", {})
+    return [p.lower() for p in meta.get("exclude", ["recap", "hotlist"])]
+
+
+def _playlist_ids():
+    """Title -> playlistId, from the cached library; falls back to the API."""
+    excludes = _sorter_excludes()
+
+    def usable(title):
+        return not any(p in title.lower() for p in excludes)
+
+    lib = _read_json(VIBE_LIBRARY_FILE, None)
+    if lib:
+        return {p["title"]: p["id"] for p in lib.get("playlists", [])
+                if usable(p["title"])}
+    from scripts.ytmusic_auth import headers_to_ytmusic
+    return {p["title"]: p["playlistId"]
+            for p in headers_to_ytmusic().get_library_playlists(limit=200)
+            if p.get("playlistId") and p.get("title") and usable(p["title"])}
+
+
+def _log_decision(record):
+    os.makedirs(os.path.dirname(DECISIONS_FILE), exist_ok=True)
+    with open(DECISIONS_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(
+            {**record, "at": datetime.datetime.utcnow().isoformat()},
+            ensure_ascii=False) + "\n")
+
+
+def _drop_from_queue(video_id):
+    queue = _read_json(SORT_QUEUE_FILE, {"tracks": []})
+    before = len(queue.get("tracks", []))
+    queue["tracks"] = [t for t in queue.get("tracks", [])
+                       if t.get("videoId") != video_id]
+    _write_queue(queue)
+    return before != len(queue["tracks"])
+
+
+@app.route("/sort")
+def sort_page():
+    return render_template("sort.html")
+
+
+@app.route("/api/sort/queue")
+def sort_queue():
+    queue = _read_json(SORT_QUEUE_FILE, {"tracks": [], "generated_at": None})
+    return jsonify({
+        "generated_at": queue.get("generated_at"),
+        "tracks": queue.get("tracks", []),
+        "playlists": sorted(_playlist_ids().keys()),
+    })
+
+
+@app.route("/api/sort/assign", methods=["POST"])
+def sort_assign():
+    """Place one queued track. The pick is also a training label: the track
+    joins the playlist, and playlists are what the next training run reads."""
+    body = request.json or {}
+    video_id, playlist = body.get("videoId"), body.get("playlist")
+    if not video_id or not playlist:
+        return jsonify({"error": "videoId and playlist are required"}), 400
+
+    playlist_id = _playlist_ids().get(playlist)
+    if not playlist_id:
+        return jsonify({"error": f"unknown playlist {playlist!r}"}), 400
+
+    try:
+        from scripts.ytmusic_auth import headers_to_ytmusic
+        headers_to_ytmusic().add_playlist_items(
+            playlist_id, [video_id], duplicates=False)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    _drop_from_queue(video_id)
+    _log_decision({"kind": "manual", "videoId": video_id,
+                   "playlist": playlist,
+                   "title": body.get("title"), "artist": body.get("artist")})
+    return jsonify({"ok": True})
+
+
+@app.route("/api/sort/skip", methods=["POST"])
+def sort_skip():
+    """Leave a track unsorted. It stays liked and reappears on a later run
+    once the model has learned more."""
+    video_id = (request.json or {}).get("videoId")
+    if not video_id:
+        return jsonify({"error": "videoId is required"}), 400
+    _drop_from_queue(video_id)
+    _log_decision({"kind": "skipped", "videoId": video_id})
     return jsonify({"ok": True})
 
 

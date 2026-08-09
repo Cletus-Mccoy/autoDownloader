@@ -1,9 +1,17 @@
-# Extra deps for the vibe sorter (scripts/vibe). Kept out of requirements.txt
-# so the downloader image stays small — install only where the probe runs.
+# Dependencies for the vibe sorter (scripts/vibe).
+#
+# Installed into the image as well as locally, because the sorter runs on the
+# same schedule as the downloader.
 numpy
 scikit-learn
-librosa
-soundfile
+joblib
 
-# Optional, for the stronger `effnet` embedding backend:
-# essentia-tensorflow
+# Audio embeddings. Linux-only wheels, which is why the sorter's embedding step
+# runs in the container rather than on Windows. Bundles TensorFlow, so it is
+# the bulk of the image size.
+essentia-tensorflow
+
+# Only needed for the `mfcc` fallback backend, which exists for testing the
+# pipeline without the heavy dependency. Skipped in the image on purpose.
+# librosa
+# soundfile

@@ -86,6 +86,14 @@
                 </svg>
                 <span class="flex-1 text-center">Playlists</span>
             </button>
+            <a id="sort-btn" href="/sort"
+                class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4"/>
+                </svg>
+                <span class="flex-1 text-center">Sort liked</span>
+                <span id="sort-queue-count" class="text-gray-600 text-xs flex-shrink-0"></span>
+            </a>
             <button id="global-refresh-btn" type="button" onclick="toggleGlobalRefresh()"
                 class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2">
                 <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
@@ -1093,6 +1101,18 @@
             setTimeout(() => { status.textContent = ''; }, 4000);
         }
     }
+
+// Badge the sidebar link with how many tracks are waiting to be sorted.
+async function refreshSortCount() {
+    try {
+        const data = await (await fetch('/api/sort/queue')).json();
+        const n = (data.tracks || []).length;
+        const el = document.getElementById('sort-queue-count');
+        if (el) el.textContent = n ? n : '';
+    } catch (e) { /* sorter not set up yet — leave the badge blank */ }
+}
+refreshSortCount();
+
 </script>
 
 </body>
