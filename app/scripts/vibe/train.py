@@ -90,7 +90,7 @@ def nested_evaluation(X, y, target_precision, outer_folds=5):
 
 
 def train(backend, exclude, target_precision, min_tracks=None, refresh=False,
-          nested=False, min_folds=4):
+          nested=False, min_folds=4, tolerance=0.05):
     if refresh:
         # Re-read playlists first: every track you placed from the review queue
         # is a new label, and picking it up is the whole feedback loop.
@@ -131,13 +131,20 @@ def train(backend, exclude, target_precision, min_tracks=None, refresh=False,
             playlist = r["playlist"]
             if thresholds.get(playlist, {}).get("threshold") is None:
                 continue
+            # Tolerance, because the honest precision is itself a measurement
+            # on a few hundred held-out tracks. Demanding the point estimate
+            # clear the target exactly revoked Feeling Good! at 89% and SPEED
+            # GARAGE at 87% — both stable in 5 folds out of 5 — which throws
+            # away good automation over sampling noise. Instability is the
+            # real disqualifier; being a couple of points under is not.
             unstable = r["folds_qualifying"] < min_folds
             imprecise = (r["precision"] is None
-                         or r["precision"] < target_precision)
+                         or r["precision"] < target_precision - tolerance)
             if unstable or imprecise:
                 thresholds[playlist]["threshold"] = None
                 thresholds[playlist]["revoked"] = (
-                    f"{r['folds_qualifying']}/{r['outer_folds']} folds, "
+                    ("unstable: " if unstable else "imprecise: ")
+                    + f"{r['folds_qualifying']}/{r['outer_folds']} folds, "
                     + ("no held-out placements" if r["precision"] is None
                        else f"{r['precision']:.0%} honest precision"))
                 revoked.append(playlist)
@@ -202,6 +209,11 @@ def main():
                         metavar="SUBSTRING")
     parser.add_argument("--target-precision", type=float, default=0.90)
     parser.add_argument("--min-tracks", type=int, default=None)
+    parser.add_argument("--precision-tolerance", type=float, default=0.05,
+                        metavar="P",
+                        help="how far under the target a playlist's honest "
+                             "precision may fall before losing unattended "
+                             "placement (default 0.05)")
     parser.add_argument("--min-folds", type=int, default=4, metavar="N",
                         help="with --nested, a playlist must qualify in at "
                              "least N of 5 outer folds to place unattended "
@@ -219,7 +231,7 @@ def main():
     fitted, classes, thresholds, nested_rows, meta = train(
         args.backend, args.exclude, args.target_precision, args.min_tracks,
         refresh=args.refresh_library, nested=args.nested,
-        min_folds=args.min_folds)
+        min_folds=args.min_folds, tolerance=args.precision_tolerance)
     if nested_rows:
         meta["nested"] = nested_rows
 
