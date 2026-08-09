@@ -70,9 +70,15 @@ def run_downloader():
             # Retrain first: tracks placed from the review queue since the last
             # run are new labels, and this is what turns your corrections into
             # a better model.
+            # --nested is not optional here. Without it, thresholds are chosen
+            # on the same data that scores them, and playlists that only look
+            # good on their own data get to place tracks unattended: HARD TECH
+            # measured 33% precision that way against a 90% target. It costs a
+            # few extra minutes and it is the difference between a sorter you
+            # can leave alone and one that quietly misfiles.
             _step("Retraining the sorter",
                   ["python3", "/app/scripts/vibe_train.py",
-                   "--refresh-library"], f)
+                   "--refresh-library", "--nested"], f)
             _step("Sorting liked tracks",
                   ["python3", "/app/scripts/vibe_route.py", "--execute",
                    "--no-refresh-library",

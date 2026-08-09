@@ -779,6 +779,7 @@ def sort_stats():
             "precision": rule.get("precision"),
             "recall": rule.get("recall"),
             "support": rule.get("support"),
+            "revoked": rule.get("revoked"),
             "auto": activity.get("auto", 0),
             "manual": activity.get("manual", 0),
         })

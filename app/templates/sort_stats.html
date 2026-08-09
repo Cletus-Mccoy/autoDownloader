@@ -181,7 +181,9 @@ async function load() {
                     <td class="px-3 py-2 text-right tabular-nums">${r.support ?? '—'}</td>
                     <td class="px-3 py-2 text-right tabular-nums">
                         ${r.threshold === null
-                            ? '<span title="never places a track unattended">manual only</span>'
+                            ? `<span class="${r.revoked ? 'text-amber-600/80' : ''}"
+                                     title="${esc(r.revoked || 'never places a track unattended')}">${
+                                r.revoked ? 'revoked' : 'manual only'}</span>`
                             : r.threshold.toFixed(2)}
                     </td>
                     <td class="px-3 py-2 text-right tabular-nums ${r.auto ? 'text-indigo-400' : ''}">${r.auto || ''}</td>
@@ -193,9 +195,11 @@ async function load() {
     </div>
 
     <div class="text-[11px] text-gray-600 mt-3 leading-relaxed">
-        Playlists marked <span class="text-gray-500">manual only</span> never place a
-        track on their own — they overlap too much with a neighbour for the model to
-        be confident. Their tracks always come to the queue, which is the intended
+        <span class="text-gray-500">manual only</span> means the playlist never
+        reached the precision target — it overlaps a neighbour too much.
+        <span class="text-amber-600/80">revoked</span> means it looked good on its own
+        data but failed when scored on data its threshold never saw; hover for the
+        reason. Both send their tracks to the queue instead, which is the intended
         behaviour rather than a gap.
     </div>`;
 
