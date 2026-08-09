@@ -46,6 +46,13 @@ SNIPPET_SECONDS = int(os.getenv("VIBE_SNIPPET_SECONDS", "60"))
 # loader resamples to this regardless of what's on disk.
 SAMPLE_RATE = 16000
 
+# Rate for the handcrafted rhythm/energy features. essentia's
+# RhythmExtractor2013 and friends are tuned for 44.1kHz; handing them 16kHz
+# audio produces plausible-looking nonsense — the same track measured 85 BPM at
+# 16kHz and 125 BPM at 44.1kHz. Resampling doesn't change duration, so this
+# costs a re-analysis and no re-download.
+ANALYSIS_RATE = 44100
+
 # What's stored. Originally these were 16kHz mono WAVs — the embedder's input
 # written straight to disk — which made previews sound dull: 16kHz caps
 # everything above 8kHz, so cymbals and air are simply missing, and mono

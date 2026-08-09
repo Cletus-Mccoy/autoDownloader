@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sorter stats — YT Music</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen" style="background-color:#0a0f1a">
+
+<div class="max-w-3xl mx-auto px-4 py-8">
+
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-2">
+            <span class="text-xl">📊</span>
+            <h1 class="text-base font-bold tracking-tight text-white">Sorter stats</h1>
+        </div>
+        <div class="flex items-center gap-4 text-xs">
+            <a href="/sort" class="text-gray-500 hover:text-indigo-400 transition-colors">Sort queue</a>
+            <a href="/" class="text-gray-500 hover:text-indigo-400 transition-colors">← Downloader</a>
+        </div>
+    </div>
+
+    <div id="body" class="text-sm text-gray-500">Loading…</div>
+</div>
+
+<script>
+function pct(x, digits = 0) {
+    return (x === null || x === undefined) ? '—' : (x * 100).toFixed(digits) + '%';
+}
+function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c =>
+        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function tile(label, value, note, accent) {
+    return `<div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+        <div class="text-[11px] uppercase tracking-wide text-gray-500 mb-1">${label}</div>
+        <div class="text-2xl font-semibold ${accent || 'text-white'} tabular-nums">${value}</div>
+        <div class="text-[11px] text-gray-600 mt-1">${note || ''}</div>
+    </div>`;
+}
+
+async function load() {
+    const d = await (await fetch('/api/sort/stats')).json();
+    const m = d.model, a = d.activity;
+
+    if (!m.trained_at) {
+        document.getElementById('body').innerHTML =
+            `<div class="bg-gray-900 border border-gray-800 rounded-lg p-6 text-center">
+                <div class="text-gray-300 font-medium mb-1">No model yet</div>
+                <div class="text-xs text-gray-500">Run <code class="bg-gray-800 px-1.5 py-0.5 rounded">vibe_train.py</code> to train the sorter.</div>
+            </div>`;
+        return;
+    }
+
+    const trained = m.trained_at.slice(0, 16).replace('T', ' ');
+
+    // Automation rate is the headline: it is the share of placements the model
+    // made without asking, and the number that should climb as the queue is
+    // worked. Everything else is context for it.
+    let html = `
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        ${tile('Placed on its own', pct(a.automation_rate),
+               `${a.auto} of ${a.placed} placements`, 'text-indigo-400')}
+        ${tile('Waiting for you', a.queued, 'in the review queue')}
+        ${tile('You sorted', a.manual, a.skipped ? `${a.skipped} left alone` : 'by hand')}
+        ${tile('Routable playlists', `${m.routable}/${m.playlists}`,
+               `at ≥ ${pct(m.target_precision)} precision`)}
+    </div>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6">
+        <div class="text-[11px] uppercase tracking-wide text-gray-500 mb-3">Model</div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+            <div><div class="text-gray-500 text-xs">Top-1</div><div class="tabular-nums">${pct(m.top1, 1)}</div></div>
+            <div><div class="text-gray-500 text-xs">Top-3</div><div class="tabular-nums">${pct(m.top3, 1)}</div></div>
+            <div><div class="text-gray-500 text-xs">Trained on</div><div class="tabular-nums">${m.n_train} tracks</div></div>
+            <div><div class="text-gray-500 text-xs">Last trained</div><div class="text-xs pt-1">${trained}</div></div>
+        </div>
+        <div class="text-[11px] text-gray-600 mt-3 leading-relaxed">
+            Top-1 is how often its first guess is right; top-3 how often the correct
+            playlist is among the three offered in the queue. The gap between them is
+            why a review queue works: picking from three is usually enough.
+        </div>
+    </div>`;
+
+    // Pipeline: where tracks are in the fetch → embed → place chain. Without
+    // this the sorter is a black box between nightly runs.
+    const p = d.pipeline || {};
+    const embedRows = Object.entries(p.embedded || {})
+        .map(([name, n]) => `<span class="inline-flex items-center gap-1.5 mr-3">
+            <span class="text-gray-500">${esc(name)}</span>
+            <span class="tabular-nums">${n === null ? '?' : n}</span>
+        </span>`).join('');
+
+    html += `
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6">
+        <div class="text-[11px] uppercase tracking-wide text-gray-500 mb-3">Pipeline</div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm mb-3">
+            <div>
+                <div class="text-gray-500 text-xs">Liked</div>
+                <div class="tabular-nums">${p.liked ?? '—'}</div>
+            </div>
+            <div>
+                <div class="text-gray-500 text-xs">In playlists</div>
+                <div class="tabular-nums">${p.filed ?? '—'}</div>
+            </div>
+            <div>
+                <div class="text-gray-500 text-xs">Not yet sorted</div>
+                <div class="tabular-nums ${p.unsorted ? 'text-amber-400' : ''}">${p.unsorted ?? '—'}</div>
+            </div>
+            <div>
+                <div class="text-gray-500 text-xs">Snippets cached</div>
+                <div class="tabular-nums">${p.audio_files ?? '—'}
+                    <span class="text-xs text-gray-600">· ${p.audio_mb ?? 0} MB</span>
+                </div>
+            </div>
+        </div>
+        <div class="text-xs border-t border-gray-800 pt-3">
+            <span class="text-gray-500 mr-2">Embedded:</span>${embedRows || '<span class="text-gray-600">none yet</span>'}
+        </div>
+        ${p.awaiting_embedding > 0 ? `
+        <div class="text-[11px] text-amber-500/80 mt-2">
+            ${p.awaiting_embedding} unsorted track(s) aren't in the queue yet — they
+            still need a snippet and an embedding. The nightly run fetches a capped
+            number at a time, so a backlog drains over several nights.
+        </div>` : `
+        <div class="text-[11px] text-gray-600 mt-2">
+            Every unsorted track has been embedded and is either placed or in the queue.
+        </div>`}
+        ${p.queue_generated_at ? `
+        <div class="text-[11px] text-gray-600 mt-1">
+            Queue last rebuilt ${esc(p.queue_generated_at.slice(0, 16).replace('T', ' '))} UTC
+        </div>` : ''}
+    </div>`;
+
+    if (d.nested && d.nested.length) {
+        const stable = d.nested.filter(r => r.folds_qualifying === r.outer_folds).length;
+        const scored = d.nested.filter(r => r.precision !== null);
+        const acc = scored.reduce((s, r) => s + r.accepted, 0);
+        const cor = scored.reduce((s, r) => s + r.precision * r.accepted, 0);
+        html += `
+        <div class="bg-gray-900 border border-amber-900/40 rounded-lg p-4 mb-6">
+            <div class="text-[11px] uppercase tracking-wide text-amber-500/80 mb-2">Honest estimate</div>
+            <div class="text-sm">
+                Measured on held-out data: <span class="tabular-nums font-semibold">${acc ? pct(cor / acc, 1) : '—'}</span>
+                precision · <span class="tabular-nums font-semibold">${stable}</span> playlist(s) qualify in every fold
+            </div>
+            <div class="text-[11px] text-gray-600 mt-2 leading-relaxed">
+                The per-playlist figures below pick each threshold on the same data they
+                are then scored on, which flatters them. This row picks thresholds on
+                data it never scores, so it is what to expect on new tracks.
+            </div>
+        </div>`;
+    }
+
+    const rows = d.playlists.slice().sort((x, y) =>
+        (y.threshold === null ? -1 : y.recall) - (x.threshold === null ? -1 : x.recall));
+
+    html += `
+    <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-800">
+            <div class="text-[11px] uppercase tracking-wide text-gray-500">Per playlist</div>
+        </div>
+        <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+            <thead class="text-gray-500">
+                <tr class="border-b border-gray-800">
+                    <th class="text-left font-medium px-4 py-2">Playlist</th>
+                    <th class="text-right font-medium px-3 py-2">Tracks</th>
+                    <th class="text-right font-medium px-3 py-2">Cutoff</th>
+                    <th class="text-right font-medium px-3 py-2">Auto</th>
+                    <th class="text-right font-medium px-3 py-2">By hand</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800/60">
+                ${rows.map(r => `
+                <tr class="${r.threshold === null ? 'text-gray-600' : ''}">
+                    <td class="px-4 py-2">${esc(r.playlist)}</td>
+                    <td class="px-3 py-2 text-right tabular-nums">${r.support ?? '—'}</td>
+                    <td class="px-3 py-2 text-right tabular-nums">
+                        ${r.threshold === null
+                            ? '<span title="never places a track unattended">manual only</span>'
+                            : r.threshold.toFixed(2)}
+                    </td>
+                    <td class="px-3 py-2 text-right tabular-nums ${r.auto ? 'text-indigo-400' : ''}">${r.auto || ''}</td>
+                    <td class="px-3 py-2 text-right tabular-nums">${r.manual || ''}</td>
+                </tr>`).join('')}
+            </tbody>
+        </table>
+        </div>
+    </div>
+
+    <div class="text-[11px] text-gray-600 mt-3 leading-relaxed">
+        Playlists marked <span class="text-gray-500">manual only</span> never place a
+        track on their own — they overlap too much with a neighbour for the model to
+        be confident. Their tracks always come to the queue, which is the intended
+        behaviour rather than a gap.
+    </div>`;
+
+    if (d.by_day && d.by_day.length > 1) {
+        const max = Math.max(...d.by_day.map(x => x.auto + x.manual));
+        html += `
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mt-6">
+            <div class="text-[11px] uppercase tracking-wide text-gray-500 mb-3">Recent activity</div>
+            <div class="flex items-end gap-1 h-20">
+                ${d.by_day.map(x => {
+                    const total = x.auto + x.manual;
+                    const h = max ? Math.max(2, (total / max) * 100) : 2;
+                    const autoShare = total ? (x.auto / total) * 100 : 0;
+                    return `<div class="flex-1 flex flex-col justify-end" title="${x.day}: ${x.auto} auto, ${x.manual} by hand">
+                        <div style="height:${h}%" class="w-full rounded-t overflow-hidden flex flex-col-reverse">
+                            <div style="height:${autoShare}%" class="bg-indigo-500 w-full"></div>
+                            <div style="height:${100 - autoShare}%" class="bg-gray-600 w-full"></div>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>
+            <div class="flex items-center gap-4 mt-2 text-[11px] text-gray-600">
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-indigo-500"></span>automatic</span>
+                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-gray-600"></span>by hand</span>
+            </div>
+        </div>`;
+    }
+
+    document.getElementById('body').innerHTML = html;
+}
+
+load();
+</script>
+</body>
+</html>

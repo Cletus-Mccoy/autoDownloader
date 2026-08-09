@@ -680,6 +680,135 @@ def sort_queue():
     })
 
 
+@app.route("/sort/stats")
+def sort_stats_page():
+    return render_template("sort_stats.html")
+
+
+@app.route("/api/sort/stats")
+def sort_stats():
+    """What the sorter knows and what it has done.
+
+    The number worth watching is the automation rate — placed unattended
+    against total placed. It should climb as queue decisions accumulate,
+    because every pick is a training label for the playlists the model is
+    currently worst at.
+    """
+    meta = _read_json(f"{VIBE_DIR}/thresholds.json", {})
+    thresholds = meta.get("thresholds", {})
+    queue = _read_json(SORT_QUEUE_FILE, {"tracks": []})
+
+    counts = {"auto": 0, "manual": 0, "skipped": 0}
+    by_playlist = {}
+    by_day = {}
+    if os.path.exists(DECISIONS_FILE):
+        with open(DECISIONS_FILE, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                kind = d.get("kind", "auto")
+                counts[kind] = counts.get(kind, 0) + 1
+                playlist = d.get("playlist")
+                if playlist and kind in ("auto", "manual"):
+                    slot = by_playlist.setdefault(playlist, {"auto": 0, "manual": 0})
+                    slot[kind] += 1
+                day = (d.get("at") or "")[:10]
+                if day:
+                    slot = by_day.setdefault(day, {"auto": 0, "manual": 0,
+                                                   "skipped": 0})
+                    slot[kind] = slot.get(kind, 0) + 1
+
+    placed = counts["auto"] + counts["manual"]
+
+    # Pipeline state: what's been fetched and embedded. An .npz is a zip of
+    # "<videoId>.npy" entries, so the names can be listed without numpy and
+    # without decompressing anything.
+    audio_dir = os.path.join(VIBE_DIR, "audio")
+    audio_files = audio_bytes = 0
+    if os.path.isdir(audio_dir):
+        with os.scandir(audio_dir) as entries:
+            for entry in entries:
+                if entry.is_file():
+                    audio_files += 1
+                    audio_bytes += entry.stat().st_size
+
+    embedded = {}
+    embed_dir = os.path.join(VIBE_DIR, "embeddings")
+    if os.path.isdir(embed_dir):
+        import zipfile
+        for name in sorted(os.listdir(embed_dir)):
+            if not name.endswith(".npz"):
+                continue
+            try:
+                with zipfile.ZipFile(os.path.join(embed_dir, name)) as z:
+                    embedded[name[:-4]] = len(z.namelist())
+            except Exception:
+                embedded[name[:-4]] = None
+
+    lib = _read_json(VIBE_LIBRARY_FILE, None) or {}
+    excludes = _sorter_excludes()
+    filed = {t["videoId"] for p in lib.get("playlists", [])
+             if not any(x in p["title"].lower() for x in excludes)
+             for t in p.get("tracks", [])}
+    liked = [t["videoId"] for t in lib.get("liked", [])]
+    unsorted = [v for v in liked if v not in filed]
+
+    backend = meta.get("backend")
+    have_vectors = embedded.get(backend)
+    pipeline = {
+        "audio_files": audio_files,
+        "audio_mb": round(audio_bytes / 1e6, 1),
+        "embedded": embedded,
+        "backend": backend,
+        "liked": len(liked),
+        "filed": len(filed),
+        "unsorted": len(unsorted),
+        "queue_generated_at": queue.get("generated_at"),
+        # Tracks still needing work before they could be placed at all.
+        "awaiting_embedding": max(0, len(unsorted) - len(queue.get("tracks", []))),
+        "vectors": have_vectors,
+    }
+    rows = []
+    for playlist, rule in sorted(thresholds.items()):
+        activity = by_playlist.get(playlist, {})
+        rows.append({
+            "playlist": playlist,
+            "threshold": rule.get("threshold"),
+            "precision": rule.get("precision"),
+            "recall": rule.get("recall"),
+            "support": rule.get("support"),
+            "auto": activity.get("auto", 0),
+            "manual": activity.get("manual", 0),
+        })
+
+    return jsonify({
+        "model": {
+            "trained_at": meta.get("trained_at"),
+            "n_train": meta.get("n_train"),
+            "top1": meta.get("top1"),
+            "top3": meta.get("top3"),
+            "backend": meta.get("backend"),
+            "target_precision": meta.get("target_precision"),
+            "routable": sum(1 for r in rows if r["threshold"] is not None),
+            "playlists": len(rows),
+        },
+        "activity": {
+            "queued": len(queue.get("tracks", [])),
+            "auto": counts["auto"],
+            "manual": counts["manual"],
+            "skipped": counts["skipped"],
+            "placed": placed,
+            "automation_rate": (counts["auto"] / placed) if placed else None,
+        },
+        "pipeline": pipeline,
+        "by_day": [{"day": d, **v} for d, v in sorted(by_day.items())][-14:],
+        "playlists": rows,
+        "nested": meta.get("nested"),
+    })
+
+
 @app.route("/api/sort/preview/<video_id>")
 def sort_preview(video_id):
     """Serve the cached 60s snippet as the preview.

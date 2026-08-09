@@ -90,7 +90,7 @@ def nested_evaluation(X, y, target_precision, outer_folds=5):
 
 
 def train(backend, exclude, target_precision, min_tracks=None, refresh=False,
-          nested=False):
+          nested=False, min_folds=4):
     if refresh:
         # Re-read playlists first: every track you placed from the review queue
         # is a new label, and picking it up is the whole feedback loop.
@@ -121,9 +121,39 @@ def train(backend, exclude, target_precision, min_tracks=None, refresh=False,
               "scored on)...")
         nested_rows = nested_evaluation(X, y, target_precision)
 
+        # Gate on the honest numbers. A playlist that qualifies on full data
+        # but fails when measured on data its threshold never saw was fitting
+        # noise, and letting it place tracks unattended is worse than leaving
+        # them in the queue: HARD TECH scored 33% precision this way, and
+        # UNSORTED TECH 62%, against a 90% target.
+        revoked = []
+        for r in nested_rows:
+            playlist = r["playlist"]
+            if thresholds.get(playlist, {}).get("threshold") is None:
+                continue
+            unstable = r["folds_qualifying"] < min_folds
+            imprecise = (r["precision"] is None
+                         or r["precision"] < target_precision)
+            if unstable or imprecise:
+                thresholds[playlist]["threshold"] = None
+                thresholds[playlist]["revoked"] = (
+                    f"{r['folds_qualifying']}/{r['outer_folds']} folds, "
+                    + ("no held-out placements" if r["precision"] is None
+                       else f"{r['precision']:.0%} honest precision"))
+                revoked.append(playlist)
+        if revoked:
+            print(f"Revoked unattended placement for {len(revoked)} playlist(s) "
+                  f"that only looked good on their own data:")
+            for playlist in revoked:
+                print(f"  {playlist} — {thresholds[playlist]['revoked']}")
+
     fitted = model.build().fit(X, y)
 
-    routable = [r for r in rows if r["threshold"] is not None]
+    # Read back from `thresholds`, not `rows` — the nested gate may have
+    # revoked some, and reporting the pre-gate count would overstate what the
+    # sorter will actually do.
+    routable = [r for r in rows
+                if thresholds[r["playlist"]]["threshold"] is not None]
     auto = sum(sizes.get(r["playlist"], 0) * r["recall"] for r in routable)
     total = sum(sizes.get(r["playlist"], 0) for r in rows)
 
@@ -172,6 +202,10 @@ def main():
                         metavar="SUBSTRING")
     parser.add_argument("--target-precision", type=float, default=0.90)
     parser.add_argument("--min-tracks", type=int, default=None)
+    parser.add_argument("--min-folds", type=int, default=4, metavar="N",
+                        help="with --nested, a playlist must qualify in at "
+                             "least N of 5 outer folds to place unattended "
+                             "(default 4)")
     parser.add_argument("--nested", action="store_true",
                         help="also measure precision with nested CV, where "
                              "thresholds are picked on data they are not "
@@ -184,7 +218,8 @@ def main():
     config.ensure_dirs()
     fitted, classes, thresholds, nested_rows, meta = train(
         args.backend, args.exclude, args.target_precision, args.min_tracks,
-        refresh=args.refresh_library, nested=args.nested)
+        refresh=args.refresh_library, nested=args.nested,
+        min_folds=args.min_folds)
     if nested_rows:
         meta["nested"] = nested_rows
 

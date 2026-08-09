@@ -138,6 +138,9 @@ ENERGY_FEATURES = [
 def _energy_embed(path):
     """Explicit energy and rhythm descriptors — 18 dims, via essentia.
 
+    Analysed at ANALYSIS_RATE, not the embedder's 16kHz: these algorithms
+    assume 44.1kHz, and at 16kHz the tempo estimates are simply wrong.
+
     discogs-effnet is a *genre* model: it's trained on Discogs style labels, so
     energy is only implicit in it. When playlists are sorted by genre AND
     energy, that missing axis is exactly what collapses pairs like INDUSTRIAL
@@ -152,25 +155,25 @@ def _energy_embed(path):
     import essentia.standard as es
 
     essentia.log.warningActive = False
-    audio = es.MonoLoader(filename=path, sampleRate=config.SAMPLE_RATE,
+    audio = es.MonoLoader(filename=path, sampleRate=config.ANALYSIS_RATE,
                           resampleQuality=4)()
-    if audio.size < config.SAMPLE_RATE * 2:
+    if audio.size < config.ANALYSIS_RATE * 2:
         return None
 
     bpm, _beats, beats_conf, _est, _intervals = es.RhythmExtractor2013(
         method="multifeature")(audio)
-    danceability = es.Danceability(sampleRate=config.SAMPLE_RATE)(audio)[0]
+    danceability = es.Danceability(sampleRate=config.ANALYSIS_RATE)(audio)[0]
     onset_rate = es.OnsetRate()(audio)[1]
-    loudness_ebu = es.LoudnessEBUR128(sampleRate=config.SAMPLE_RATE)(
+    loudness_ebu = es.LoudnessEBUR128(sampleRate=config.ANALYSIS_RATE)(
         np.vstack([audio, audio]).T)[2]
     dyn_complexity, _loud = es.DynamicComplexity(
-        sampleRate=config.SAMPLE_RATE)(audio)
+        sampleRate=config.ANALYSIS_RATE)(audio)
 
     spectrum, windowing = es.Spectrum(), es.Windowing(type="hann")
-    centroid = es.Centroid(range=config.SAMPLE_RATE / 2)
+    centroid = es.Centroid(range=config.ANALYSIS_RATE / 2)
     flux, complexity = es.Flux(), es.SpectralComplexity()
     bands = [es.EnergyBandRatio(startFrequency=lo, stopFrequency=hi,
-                                sampleRate=config.SAMPLE_RATE)
+                                sampleRate=config.ANALYSIS_RATE)
              for lo, hi in ((20, 250), (250, 2000), (2000, 8000))]
 
     rms = es.RMS()
