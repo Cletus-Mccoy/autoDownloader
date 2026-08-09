@@ -44,12 +44,25 @@ def yt_dlp_binary():
 
 
 def snippet_path(video_id):
-    return os.path.join(config.AUDIO_DIR, f"{video_id}.wav")
+    """Where this track's snippet is, or would be written.
+
+    Returns an existing cached file in any supported format, so a cache full
+    of the older WAVs keeps working; falls back to the current format for
+    anything not yet fetched.
+    """
+    for extension in config.SNIPPET_EXTENSIONS:
+        candidate = os.path.join(config.AUDIO_DIR, f"{video_id}.{extension}")
+        if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
+            return candidate
+    return os.path.join(config.AUDIO_DIR,
+                        f"{video_id}.{config.SNIPPET_FORMAT}")
 
 
 def is_cached(video_id):
-    path = snippet_path(video_id)
-    return os.path.exists(path) and os.path.getsize(path) > 0
+    return any(
+        os.path.exists(p) and os.path.getsize(p) > 0
+        for p in (os.path.join(config.AUDIO_DIR, f"{video_id}.{ext}")
+                  for ext in config.SNIPPET_EXTENSIONS))
 
 
 def _window(duration_seconds):
@@ -83,8 +96,11 @@ def fetch_one(track, cookies_path=None):
         "--no-playlist",
         "--download-sections", f"*{start}-{end}",
         "--force-keyframes-at-cuts",
-        "-x", "--audio-format", "wav",
-        "--postprocessor-args", f"ExtractAudio:-ac 1 -ar {config.SAMPLE_RATE}",
+        # Keep stereo at the source rate: the embedder downmixes and resamples
+        # on load, and storing the embedder's input instead made previews
+        # sound broken for no saving in size.
+        "-x", "--audio-format", config.SNIPPET_FORMAT,
+        "--audio-quality", config.SNIPPET_BITRATE,
         "--output", os.path.join(config.AUDIO_DIR, "%(id)s.%(ext)s"),
         "--extractor-args", "youtube:player_client=web,web_music,android",
         "--no-warnings",

@@ -694,11 +694,13 @@ def sort_preview(video_id):
     """
     if not re.fullmatch(r"[A-Za-z0-9_-]{5,20}", video_id or ""):
         return jsonify({"error": "bad id"}), 400
-    path = os.path.join(VIBE_DIR, "audio", f"{video_id}.wav")
-    if not os.path.exists(path):
-        return jsonify({"error": "no preview"}), 404
-    return send_from_directory(os.path.join(VIBE_DIR, "audio"),
-                               f"{video_id}.wav", mimetype="audio/wav")
+    audio_dir = os.path.join(VIBE_DIR, "audio")
+    # m4a is what new fetches store; wav is the older format, still readable.
+    for extension, mime in (("m4a", "audio/mp4"), ("wav", "audio/wav")):
+        name = f"{video_id}.{extension}"
+        if os.path.exists(os.path.join(audio_dir, name)):
+            return send_from_directory(audio_dir, name, mimetype=mime)
+    return jsonify({"error": "no preview"}), 404
 
 
 @app.route("/api/sort/assign", methods=["POST"])

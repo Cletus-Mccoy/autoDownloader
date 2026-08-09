@@ -41,7 +41,22 @@ MIN_TRACKS_PER_PLAYLIST = int(os.getenv("VIBE_MIN_TRACKS", "15"))
 
 # Snippet taken from the middle of each track.
 SNIPPET_SECONDS = int(os.getenv("VIBE_SNIPPET_SECONDS", "60"))
+
+# What the embedding model consumes. discogs-effnet wants 16kHz mono, and the
+# loader resamples to this regardless of what's on disk.
 SAMPLE_RATE = 16000
+
+# What's stored. Originally these were 16kHz mono WAVs — the embedder's input
+# written straight to disk — which made previews sound dull: 16kHz caps
+# everything above 8kHz, so cymbals and air are simply missing, and mono
+# collapses the image. m4a at full rate in stereo is both nicer to listen to
+# and *smaller* (roughly 1MB against 1.9MB), since the embedder can resample
+# on load and doesn't need the file to match its input format.
+SNIPPET_FORMAT = os.getenv("VIBE_SNIPPET_FORMAT", "m4a")
+SNIPPET_BITRATE = os.getenv("VIBE_SNIPPET_BITRATE", "128k")
+
+# Older caches are WAV; both are readable, so an existing cache stays valid.
+SNIPPET_EXTENSIONS = ("m4a", "wav")
 
 # Fixed so re-runs sample the same tracks and stay comparable.
 RANDOM_SEED = 1312

@@ -392,3 +392,15 @@ def test_sort_assign_requires_known_playlist(client):
 
 def test_sort_assign_requires_fields(client):
     assert client.post("/api/sort/assign", json={}).status_code == 400
+
+
+def test_sort_preview_serves_m4a_when_present(client):
+    """New fetches store m4a; the older wav cache must keep working too."""
+    import app as m
+    audio_dir = os.path.join(m.VIBE_DIR, "audio")
+    os.makedirs(audio_dir, exist_ok=True)
+    with open(os.path.join(audio_dir, "m4atrackid.m4a"), "wb") as f:
+        f.write(b"\x00\x00\x00\x20ftypM4A ")
+    resp = client.get("/api/sort/preview/m4atrackid")
+    assert resp.status_code == 200
+    assert resp.mimetype == "audio/mp4"
