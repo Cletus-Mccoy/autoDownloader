@@ -1,190 +1,226 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sort liked tracks — YT Music</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        kbd { font-family: ui-monospace, monospace; }
+        .fade-in { animation: fade .18s ease-out; }
+        @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    </style>
 </head>
-<body class="bg-gray-950 text-gray-200 min-h-screen">
-<div class="max-w-3xl mx-auto px-4 py-6">
+<body class="bg-gray-950 text-gray-100 min-h-screen" style="background-color:#0a0f1a">
 
-    <div class="flex items-center justify-between mb-1">
-        <h1 class="text-xl font-semibold">Sort liked tracks</h1>
-        <a href="/" class="text-sm text-indigo-400 hover:text-indigo-300">← Downloader</a>
-    </div>
-    <p class="text-sm text-gray-500 mb-3">
-        Tracks the sorter wasn't confident enough to place on its own. Pick a
-        playlist and it's filed straight away — and becomes a training example,
-        so these get rarer.
-    </p>
-    <p class="text-xs text-gray-600 mb-6">
-        Keyboard:
-        <kbd class="px-1 py-0.5 bg-gray-800 rounded border border-gray-700">1</kbd>
-        <kbd class="px-1 py-0.5 bg-gray-800 rounded border border-gray-700">2</kbd>
-        <kbd class="px-1 py-0.5 bg-gray-800 rounded border border-gray-700">3</kbd>
-        pick a playlist ·
-        <kbd class="px-1 py-0.5 bg-gray-800 rounded border border-gray-700">s</kbd>
-        leave it ·
-        <kbd class="px-1 py-0.5 bg-gray-800 rounded border border-gray-700">p</kbd>
-        listen ·
-        <kbd class="px-1 py-0.5 bg-gray-800 rounded border border-gray-700">↑</kbd>
-        <kbd class="px-1 py-0.5 bg-gray-800 rounded border border-gray-700">↓</kbd>
-        move
-    </p>
+<div class="max-w-2xl mx-auto px-4 py-8">
 
-    <div id="status" class="text-sm text-gray-500 mb-4">Loading…</div>
-    <div id="queue" class="space-y-3"></div>
-
-    <div id="empty" class="hidden text-center py-16">
-        <div class="text-4xl mb-3">✓</div>
-        <div class="text-gray-300 font-medium">Queue is empty</div>
-        <div class="text-sm text-gray-500 mt-1">
-            Nothing waiting. New liked tracks appear here after the next sorter run.
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-2">
+            <span class="text-xl">🎵</span>
+            <h1 class="text-base font-bold tracking-tight text-white">Sort liked tracks</h1>
         </div>
+        <a href="/" class="text-xs text-gray-500 hover:text-indigo-400 transition-colors">← Downloader</a>
+    </div>
+
+    <!-- Progress -->
+    <div class="mb-5">
+        <div class="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+            <span id="progress-text">Loading…</span>
+            <span id="session-text"></span>
+        </div>
+        <div class="h-1 bg-gray-800 rounded-full overflow-hidden">
+            <div id="progress-bar" class="h-full bg-indigo-500 transition-all duration-300" style="width:0%"></div>
+        </div>
+    </div>
+
+    <!-- The one card -->
+    <div id="card" class="hidden bg-gray-900 border border-gray-800 rounded-xl p-6"></div>
+
+    <!-- Empty -->
+    <div id="empty" class="hidden text-center py-20">
+        <div class="text-4xl mb-3">✓</div>
+        <div class="text-gray-200 font-medium">Nothing left to sort</div>
+        <div class="text-sm text-gray-500 mt-1">
+            New liked tracks appear here after the next sorter run.
+        </div>
+        <a href="/" class="inline-block mt-5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold transition-colors">
+            Back to downloader
+        </a>
+    </div>
+
+    <div class="mt-6 text-xs text-gray-600 leading-relaxed">
+        <kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">1</kbd>
+        <kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">2</kbd>
+        <kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">3</kbd> pick ·
+        <kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">space</kbd> play/pause ·
+        <kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">s</kbd> leave it ·
+        <kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">→</kbd> later ·
+        <kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">←</kbd> back ·
+        <kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">p</kbd> open in YT Music
+        <label class="ml-3 inline-flex items-center gap-1.5 cursor-pointer select-none">
+            <input type="checkbox" id="autoplay" checked
+                   class="w-3 h-3 rounded bg-gray-800 border-gray-700 accent-indigo-500">
+            <span>autoplay</span>
+        </label>
     </div>
 </div>
 
 <script>
-let playlists = [];
+let tracks = [], playlists = [], index = 0, decided = 0, total = 0;
 
 async function load() {
-    const res = await fetch('/api/sort/queue');
-    const data = await res.json();
+    const data = await (await fetch('/api/sort/queue')).json();
+    tracks = data.tracks || [];
     playlists = data.playlists || [];
-    render(data);
+    total = tracks.length;
+    show();
 }
 
-function render(data) {
-    const queue = document.getElementById('queue');
-    const tracks = data.tracks || [];
-    document.getElementById('empty').classList.toggle('hidden', tracks.length > 0);
-    document.getElementById('status').textContent = tracks.length
-        ? `${tracks.length} track${tracks.length === 1 ? '' : 's'} waiting` +
-          (data.generated_at ? ` · queued ${data.generated_at.slice(0, 16).replace('T', ' ')}` : '')
-        : '';
-    queue.innerHTML = '';
-    tracks.forEach(t => queue.appendChild(card(t)));
-    if (tracks.length) focusAt(0);
-}
+function show() {
+    const card = document.getElementById('card');
+    const empty = document.getElementById('empty');
 
-function card(track) {
-    const el = document.createElement('div');
-    el.className = 'bg-gray-900 border border-gray-800 rounded-lg p-4';
-    el.id = 'row-' + track.videoId;
+    if (!tracks.length) {
+        card.classList.add('hidden');
+        empty.classList.remove('hidden');
+        document.getElementById('progress-text').textContent = '';
+        document.getElementById('progress-bar').style.width = '100%';
+        return;
+    }
 
-    const options = (track.options || []).map((o, i) => `
-        <button onclick="assign('${track.videoId}', ${JSON.stringify(o.playlist).replace(/"/g, '&quot;')})"
-                class="text-left px-3 py-2 rounded-md bg-gray-800 hover:bg-indigo-600
-                       border border-gray-700 hover:border-indigo-500 transition
+    if (index >= tracks.length) index = tracks.length - 1;
+    if (index < 0) index = 0;
+    const t = tracks[index];
+
+    empty.classList.add('hidden');
+    card.classList.remove('hidden');
+    document.getElementById('progress-text').textContent =
+        `${index + 1} of ${tracks.length} left`;
+    document.getElementById('session-text').textContent =
+        decided ? `${decided} sorted this session` : '';
+    document.getElementById('progress-bar').style.width =
+        total ? `${(decided / total) * 100}%` : '0%';
+
+    const options = (t.options || []).map((o, i) => `
+        <button onclick="assign(${JSON.stringify(o.playlist).replace(/"/g, '&quot;')})"
+                class="group text-left px-3.5 py-3 rounded-lg bg-gray-800 hover:bg-indigo-600
+                       border border-gray-700 hover:border-indigo-500 transition-colors
                        flex items-center justify-between gap-3 w-full">
-            <span class="text-sm flex items-center gap-2">
-                <span class="text-[10px] text-gray-500 border border-gray-700 rounded px-1">${i + 1}</span>
-                ${escapeHtml(o.playlist)}
+            <span class="flex items-center gap-2.5 min-w-0">
+                <span class="text-[10px] text-gray-500 group-hover:text-indigo-200 border border-gray-600 rounded px-1.5 py-0.5 flex-shrink-0">${i + 1}</span>
+                <span class="text-sm truncate">${escapeHtml(o.playlist)}</span>
             </span>
-            <span class="text-xs text-gray-500 tabular-nums">${Math.round(o.confidence * 100)}%</span>
+            <span class="text-xs text-gray-500 group-hover:text-indigo-200 tabular-nums flex-shrink-0">
+                ${Math.round(o.confidence * 100)}%
+            </span>
         </button>`).join('');
 
     const others = playlists
-        .filter(p => !(track.options || []).some(o => o.playlist === p))
+        .filter(p => !(t.options || []).some(o => o.playlist === p))
         .map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`)
         .join('');
 
-    el.innerHTML = `
-        <div class="mb-3">
-            <div class="font-medium text-gray-100">${escapeHtml(track.title || '?')}</div>
-            <div class="text-sm text-gray-500">${escapeHtml(track.artist || '?')}</div>
+    card.innerHTML = `
+      <div class="fade-in">
+        <div class="mb-4">
+            <div class="text-lg font-semibold text-white leading-snug">${escapeHtml(t.title || '?')}</div>
+            <div class="text-sm text-gray-400 mt-0.5">${escapeHtml(t.artist || '?')}</div>
         </div>
-        <div class="grid gap-2 mb-3">${options}</div>
+
+        <audio id="player" class="w-full mb-1" controls preload="auto"
+               src="/api/sort/preview/${t.videoId}"></audio>
+        <div id="preview-note" class="text-[11px] text-gray-600 mb-5">
+            60s from the middle of the track
+        </div>
+
+        <div class="grid gap-2 mb-4">${options}</div>
+
         <div class="flex items-center gap-2">
-            <select onchange="if(this.value) assign('${track.videoId}', this.value)"
-                    class="flex-1 bg-gray-800 border border-gray-700 rounded-md px-2 py-1.5 text-sm">
+            <select id="other-select" onchange="if(this.value) assign(this.value)"
+                    class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300">
                 <option value="">Another playlist…</option>
                 ${others}
             </select>
-            <button onclick="skip('${track.videoId}')"
-                    class="px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200
-                           border border-gray-700 rounded-md hover:bg-gray-800">
-                Leave it
-            </button>
-            <a href="https://music.youtube.com/watch?v=${track.videoId}" target="_blank"
-               class="px-3 py-1.5 text-sm text-gray-400 hover:text-indigo-300
-                      border border-gray-700 rounded-md hover:bg-gray-800">Listen</a>
+            <button onclick="skip()"
+                    class="px-3 py-2 text-sm text-gray-400 hover:text-gray-200 border border-gray-700
+                           rounded-lg hover:bg-gray-800 transition-colors flex-shrink-0">Leave it</button>
+            <button onclick="move(1)"
+                    class="px-3 py-2 text-sm text-gray-400 hover:text-gray-200 border border-gray-700
+                           rounded-lg hover:bg-gray-800 transition-colors flex-shrink-0">Later →</button>
         </div>
-        <div class="text-xs mt-2 h-4" id="msg-${track.videoId}"></div>`;
-    return el;
-}
 
-async function assign(videoId, playlist) {
-    const msg = document.getElementById('msg-' + videoId);
-    msg.textContent = 'Adding…';
-    msg.className = 'text-xs mt-2 h-4 text-gray-500';
-    const res = await fetch('/api/sort/assign', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({videoId, playlist})
-    });
-    const data = await res.json();
-    if (data.ok) { remove(videoId); } else {
-        msg.textContent = data.error || 'Failed';
-        msg.className = 'text-xs mt-2 h-4 text-red-400';
+        <div id="msg" class="text-xs mt-3 h-4"></div>
+      </div>`;
+
+    const player = document.getElementById('player');
+    player.onerror = () => {
+        document.getElementById('preview-note').innerHTML =
+            `No cached preview — <a class="text-indigo-400 hover:text-indigo-300 underline"
+             href="https://music.youtube.com/watch?v=${t.videoId}" target="_blank">open in YT Music</a>`;
+        player.classList.add('hidden');
+    };
+    if (document.getElementById('autoplay').checked) {
+        player.play().catch(() => {});  // browsers block autoplay until first interaction
     }
 }
 
-async function skip(videoId) {
+function move(step) {
+    index += step;
+    show();
+}
+
+async function assign(playlist) {
+    const t = tracks[index];
+    const msg = document.getElementById('msg');
+    msg.textContent = 'Adding…';
+    msg.className = 'text-xs mt-3 h-4 text-gray-500';
+    const res = await fetch('/api/sort/assign', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({videoId: t.videoId, playlist,
+                              title: t.title, artist: t.artist})
+    });
+    const data = await res.json();
+    if (data.ok) { consume(); } else {
+        msg.textContent = data.error || 'Failed';
+        msg.className = 'text-xs mt-3 h-4 text-red-400';
+    }
+}
+
+async function skip() {
+    const t = tracks[index];
     await fetch('/api/sort/skip', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({videoId})
+        body: JSON.stringify({videoId: t.videoId})
     });
-    remove(videoId);
+    consume();
 }
 
-function remove(videoId) {
-    const row = document.getElementById('row-' + videoId);
-    const wasFocused = row && row.classList.contains('ring-2');
-    if (row) row.remove();
-    const left = document.querySelectorAll('#queue > div').length;
-    document.getElementById('empty').classList.toggle('hidden', left > 0);
-    document.getElementById('status').textContent = left
-        ? `${left} track${left === 1 ? '' : 's'} waiting` : '';
-    // Keep the cursor where the removed card was, so a run of keyboard
-    // decisions never needs the mouse.
-    if (wasFocused) focusAt(Math.min(cursor, left - 1));
-}
-
-// ── Keyboard driving ────────────────────────────────────────────────────────
-// A 450-track queue is a lot of clicking; number keys plus auto-advance turn
-// it into something you can work through at speed.
-let cursor = 0;
-
-function cards() { return [...document.querySelectorAll('#queue > div')]; }
-
-function focusAt(i) {
-    const list = cards();
-    if (!list.length) return;
-    cursor = Math.max(0, Math.min(i, list.length - 1));
-    list.forEach(c => c.classList.remove('ring-2', 'ring-indigo-500'));
-    const el = list[cursor];
-    el.classList.add('ring-2', 'ring-indigo-500');
-    el.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+function consume() {
+    tracks.splice(index, 1);
+    decided++;
+    show();   // index already points at the next track
 }
 
 document.addEventListener('keydown', e => {
     if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
-    const list = cards();
-    if (!list.length) return;
-    const el = list[Math.min(cursor, list.length - 1)];
-    const videoId = el.id.replace('row-', '');
+    if (!tracks.length) return;
+    const player = document.getElementById('player');
 
-    if (e.key === 'ArrowDown' || e.key === 'j') { focusAt(cursor + 1); e.preventDefault(); }
-    else if (e.key === 'ArrowUp' || e.key === 'k') { focusAt(cursor - 1); e.preventDefault(); }
-    else if (e.key === 's') { skip(videoId); e.preventDefault(); }
+    if (e.key === ' ') {
+        if (player) { player.paused ? player.play() : player.pause(); }
+        e.preventDefault();
+    } else if (e.key === 'ArrowRight') { move(1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft') { move(-1); e.preventDefault(); }
+    else if (e.key === 's') { skip(); e.preventDefault(); }
     else if (e.key === 'p') {
-        window.open('https://music.youtube.com/watch?v=' + videoId, '_blank');
+        window.open('https://music.youtube.com/watch?v=' + tracks[index].videoId, '_blank');
         e.preventDefault();
     } else if (['1', '2', '3'].includes(e.key)) {
-        const btn = el.querySelectorAll('.grid button')[Number(e.key) - 1];
+        const btn = document.querySelectorAll('#card .grid button')[Number(e.key) - 1];
         if (btn) { btn.click(); e.preventDefault(); }
     }
 });

@@ -636,10 +636,16 @@ def _playlist_ids():
     if lib:
         return {p["title"]: p["id"] for p in lib.get("playlists", [])
                 if usable(p["title"])}
-    from scripts.ytmusic_auth import headers_to_ytmusic
-    return {p["title"]: p["playlistId"]
-            for p in headers_to_ytmusic().get_library_playlists(limit=200)
-            if p.get("playlistId") and p.get("title") and usable(p["title"])}
+    # No cached library: ask YouTube, but never let that failure take the queue
+    # page down with it. Without auth the page should still list what's
+    # pending, just with no destinations to offer.
+    try:
+        from scripts.ytmusic_auth import headers_to_ytmusic
+        return {p["title"]: p["playlistId"]
+                for p in headers_to_ytmusic().get_library_playlists(limit=200)
+                if p.get("playlistId") and p.get("title") and usable(p["title"])}
+    except Exception:
+        return {}
 
 
 def _log_decision(record):
@@ -672,6 +678,27 @@ def sort_queue():
         "tracks": queue.get("tracks", []),
         "playlists": sorted(_playlist_ids().keys()),
     })
+
+
+@app.route("/api/sort/preview/<video_id>")
+def sort_preview(video_id):
+    """Serve the cached 60s snippet as the preview.
+
+    It already exists — it's what the embedding was computed from — and it's
+    taken from the middle of the track, which is the part worth judging. No
+    network call, so previews are instant. Mono 16kHz: fine for recognising a
+    track, not meant for listening pleasure.
+
+    Returns 404 when the snippet was pruned (--prune-audio) or never fetched;
+    the UI falls back to a link out to YouTube Music.
+    """
+    if not re.fullmatch(r"[A-Za-z0-9_-]{5,20}", video_id or ""):
+        return jsonify({"error": "bad id"}), 400
+    path = os.path.join(VIBE_DIR, "audio", f"{video_id}.wav")
+    if not os.path.exists(path):
+        return jsonify({"error": "no preview"}), 404
+    return send_from_directory(os.path.join(VIBE_DIR, "audio"),
+                               f"{video_id}.wav", mimetype="audio/wav")
 
 
 @app.route("/api/sort/assign", methods=["POST"])

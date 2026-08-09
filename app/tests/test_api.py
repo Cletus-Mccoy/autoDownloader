@@ -308,3 +308,87 @@ def test_api_status_returns_expected_fields(client):
     # Optionally check types
     assert isinstance(data["tracks"], int)
     assert isinstance(data["running"], bool)
+
+
+# ── Vibe sorter ──────────────────────────────────────────────────────────────
+
+def test_sort_page_renders(client):
+    resp = client.get("/sort")
+    assert resp.status_code == 200
+    assert b"Sort liked tracks" in resp.data
+
+
+def test_sort_queue_empty_when_no_file(client):
+    data = client.get("/api/sort/queue").get_json()
+    assert data["tracks"] == []
+    assert data["generated_at"] is None
+
+
+def test_sort_queue_lists_tracks_and_hides_excluded_playlists(client):
+    """The UI must not offer a destination the sorter doesn't know about —
+    notably YouTube's generated mixes, which can't be edited at all."""
+    import app as m
+    os.makedirs(m.VIBE_DIR, exist_ok=True)
+    with open(m.VIBE_LIBRARY_FILE, "w", encoding="utf-8") as f:
+        json.dump({"playlists": [
+            {"title": "25. INDUSTRIAL TECHNO", "id": "PL1", "tracks": []},
+            {"title": "House & Techno Hotlist", "id": "RDCLAK5uy", "tracks": []},
+            {"title": "2025 Recap", "id": "PL2", "tracks": []},
+        ]}, f)
+    with open(m.SORT_QUEUE_FILE, "w", encoding="utf-8") as f:
+        json.dump({"generated_at": "now", "tracks": [
+            {"videoId": "abc123", "title": "T", "artist": "A",
+             "options": [{"playlist": "25. INDUSTRIAL TECHNO", "confidence": 0.4}]},
+        ]}, f)
+
+    data = client.get("/api/sort/queue").get_json()
+    assert len(data["tracks"]) == 1
+    assert data["playlists"] == ["25. INDUSTRIAL TECHNO"]
+
+
+def test_sort_preview_rejects_malformed_id(client):
+    assert client.get("/api/sort/preview/not a valid id!").status_code in (400, 404)
+
+
+def test_sort_preview_missing_snippet_returns_404(client):
+    assert client.get("/api/sort/preview/abcdefghijk").status_code == 404
+
+
+def test_sort_preview_serves_cached_snippet(client):
+    import app as m
+    path = os.path.join(m.VIBE_DIR, "audio", "abcdefghijk.wav")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"RIFF....WAVEfmt ")
+    resp = client.get("/api/sort/preview/abcdefghijk")
+    assert resp.status_code == 200
+    assert resp.mimetype == "audio/wav"
+
+
+def test_sort_skip_removes_from_queue(client):
+    import app as m
+    os.makedirs(m.VIBE_DIR, exist_ok=True)
+    with open(m.SORT_QUEUE_FILE, "w", encoding="utf-8") as f:
+        json.dump({"generated_at": "now", "tracks": [
+            {"videoId": "keepme", "options": []},
+            {"videoId": "dropme", "options": []},
+        ]}, f)
+
+    assert client.post("/api/sort/skip", json={"videoId": "dropme"}).status_code == 200
+    remaining = [t["videoId"] for t in client.get("/api/sort/queue").get_json()["tracks"]]
+    assert remaining == ["keepme"]
+
+
+def test_sort_assign_requires_known_playlist(client):
+    import app as m
+    os.makedirs(m.VIBE_DIR, exist_ok=True)
+    with open(m.VIBE_LIBRARY_FILE, "w", encoding="utf-8") as f:
+        json.dump({"playlists": [{"title": "26. ACID TECH", "id": "PL9",
+                                  "tracks": []}]}, f)
+    resp = client.post("/api/sort/assign",
+                       json={"videoId": "abc123", "playlist": "Nope"})
+    assert resp.status_code == 400
+
+
+def test_sort_assign_requires_fields(client):
+    assert client.post("/api/sort/assign", json={}).status_code == 400

@@ -42,6 +42,13 @@ def flask_app(data_dir, monkeypatch, tmp_path):
     monkeypatch.setattr(flask_module, "SELECTION_FILE",    str(data_dir / "playlist_selection.json"))
     monkeypatch.setattr(flask_module, "CRON_FILE",         str(tmp_path / "crontab"))
 
+    vibe_dir = tmp_path / "vibe"
+    (vibe_dir / "audio").mkdir(parents=True)
+    monkeypatch.setattr(flask_module, "VIBE_DIR",          str(vibe_dir))
+    monkeypatch.setattr(flask_module, "SORT_QUEUE_FILE",   str(vibe_dir / "sort_queue.json"))
+    monkeypatch.setattr(flask_module, "VIBE_LIBRARY_FILE", str(vibe_dir / "library.json"))
+    monkeypatch.setattr(flask_module, "DECISIONS_FILE",    str(vibe_dir / "reports" / "decisions.jsonl"))
+
     # Also patch ytmusic_auth's constants — the /auth/status route imports
     # has_oauth/has_headers from there, which read these paths directly.
     monkeypatch.setattr(ytmusic_auth, "AUTH_DIR",          auth_dir)
