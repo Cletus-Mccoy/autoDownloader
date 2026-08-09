@@ -144,7 +144,12 @@ def main():
     parser.add_argument("--shortlist", type=int, default=3,
                         help="how many options to offer for a queued track")
     parser.add_argument("--prune-audio", action="store_true")
-    parser.add_argument("--refresh-library", action="store_true", default=True)
+    # store_true with default=True can never be switched off — the library is
+    # re-read by default because a stale one would re-queue tracks you already
+    # filed, and this is how you opt out.
+    parser.add_argument("--no-refresh-library", action="store_false",
+                        dest="refresh_library", default=True,
+                        help="use the cached library instead of re-reading it")
     parser.add_argument("--execute", action="store_true",
                         help="actually add tracks; otherwise dry run")
     args = parser.parse_args()

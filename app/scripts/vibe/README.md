@@ -74,6 +74,28 @@ curl -o app/data/vibe/discogs-effnet-bs64-1.pb \
   https://essentia.upf.edu/models/feature-extractors/discogs-effnet/discogs-effnet-bs64-1.pb
 ```
 
+## The nightly run
+
+`scripts/scheduler.py` — the existing cron entry, unchanged — now runs three
+steps in order:
+
+1. **Retrain** (`vibe_train.py --refresh-library`). Re-reads playlists, so every
+   track placed from the review queue since last night becomes a training
+   label. This is the whole feedback loop, and it needs no separate store:
+   picking a playlist in the UI *is* the label.
+2. **Sort** (`vibe_route.py --execute --max-new-audio 50`). Files confident
+   tracks, queues the rest. The cap bounds the nightly download; a backlog
+   drains over several nights instead of one run fetching thousands.
+3. **Download** — unchanged. It collects whatever is in the playlists, so
+   anything filed in step 2 arrives the same night.
+
+Order matters: sorting after downloading would leave every newly filed track
+waiting a full day. Sorter failures are logged and stepped over — a stale model
+or expired auth must never stop the downloader collecting what's already filed.
+
+Env knobs: `VIBE_SORTER=false` disables steps 1-2; `VIBE_MAX_NEW_AUDIO` changes
+the nightly fetch cap.
+
 ## Modules
 
 | file | role |

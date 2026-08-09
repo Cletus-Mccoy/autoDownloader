@@ -24,7 +24,11 @@ import numpy as np
 from . import config, library, model, probe, sweep
 
 
-def train(backend, exclude, target_precision, min_tracks=None):
+def train(backend, exclude, target_precision, min_tracks=None, refresh=False):
+    if refresh:
+        # Re-read playlists first: every track you placed from the review queue
+        # is a new label, and picking it up is the whole feedback loop.
+        library.load_library(refresh=True)
     X, y, stats, sizes = sweep.load_cached(backend, exclude, min_tracks)
     X, y, _, thin = probe.drop_thin_classes(X, y, list(range(len(y))))
     if thin:
@@ -75,11 +79,15 @@ def main():
                         metavar="SUBSTRING")
     parser.add_argument("--target-precision", type=float, default=0.90)
     parser.add_argument("--min-tracks", type=int, default=None)
+    parser.add_argument("--refresh-library", action="store_true",
+                        help="re-read playlists first, so decisions made "
+                             "in the review queue become training labels")
     args = parser.parse_args()
 
     config.ensure_dirs()
     fitted, classes, thresholds, meta = train(
-        args.backend, args.exclude, args.target_precision, args.min_tracks)
+        args.backend, args.exclude, args.target_precision, args.min_tracks,
+        refresh=args.refresh_library)
 
     model_path = os.path.join(config.DATA_DIR, "model.joblib")
     joblib.dump({"pipeline": fitted, "classes": list(classes), **meta},
