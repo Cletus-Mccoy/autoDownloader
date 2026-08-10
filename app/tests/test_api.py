@@ -404,3 +404,66 @@ def test_sort_preview_serves_m4a_when_present(client):
     resp = client.get("/api/sort/preview/m4atrackid")
     assert resp.status_code == 200
     assert resp.mimetype == "audio/mp4"
+
+
+# ── Schedule persistence ─────────────────────────────────────────────────────
+
+def test_cron_survives_a_container_recreate(client, tmp_path):
+    """The schedule must live on the bind mount, not the writable layer.
+
+    /etc/cron.d is discarded whenever the container is recreated, so a
+    schedule that only exists there disappears on the next deploy and the job
+    silently never fires.
+    """
+    import app as m
+    m.write_schedule("30 4 * * *")
+    m.write_cron_file("30 4 * * *")
+
+    # Simulate the recreate: the cron file is gone, the data volume persists.
+    os.remove(m.CRON_FILE)
+    assert m.read_schedule() == "30 4 * * *"
+
+    m.ensure_cron()
+    assert os.path.exists(m.CRON_FILE)
+    with open(m.CRON_FILE) as f:
+        assert f.read().startswith("30 4 * * *")
+
+
+def test_cron_get_reports_persisted_schedule_after_recreate(client):
+    import app as m
+    m.write_schedule("15 2 * * *")
+    if os.path.exists(m.CRON_FILE):
+        os.remove(m.CRON_FILE)
+    assert client.get("/api/cron").get_json()["expression"] == "15 2 * * *"
+    # Reading it also repairs the missing file rather than just reporting.
+    assert os.path.exists(m.CRON_FILE)
+
+
+def test_cron_post_persists_to_the_data_volume(client):
+    import app as m
+    assert client.post("/api/cron", json={"expression": "5 1 * * *"}).status_code == 200
+    with open(m.SCHEDULE_FILE, encoding="utf-8") as f:
+        assert json.load(f)["expression"] == "5 1 * * *"
+
+
+def test_cron_file_is_not_group_writable(client):
+    """Debian cron ignores cron.d entries that are group or world writable."""
+    import app as m
+    import stat
+    m.write_cron_file("0 3 * * *")
+    mode = os.stat(m.CRON_FILE).st_mode
+    assert not mode & stat.S_IWGRP
+    assert not mode & stat.S_IWOTH
+    with open(m.CRON_FILE) as f:
+        assert f.read().endswith("\n")  # cron skips a file without one
+
+
+def test_ensure_cron_adopts_existing_container_schedule(client):
+    """Upgrading must not reset a schedule that only exists in the cron file."""
+    import app as m
+    if os.path.exists(m.SCHEDULE_FILE):
+        os.remove(m.SCHEDULE_FILE)
+    m.write_cron_file("45 6 * * *")
+    assert m.ensure_cron() == "45 6 * * *"
+    with open(m.SCHEDULE_FILE, encoding="utf-8") as f:
+        assert json.load(f)["expression"] == "45 6 * * *"

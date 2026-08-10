@@ -6,8 +6,20 @@ from croniter import croniter
 
 CRON_FILE = "/etc/cron.d/ytmusic"
 RUNS_FILE = "/app/data/runs.json"
+# Same reasoning as app.py: /etc/cron.d is wiped by a container recreate, so
+# the schedule on the bind mount is the authoritative copy. Reading only the
+# cron file made "next run" go blank after every deploy.
+SCHEDULE_FILE = "/app/data/schedule.json"
+
 
 def get_cron_expression():
+    try:
+        with open(SCHEDULE_FILE) as f:
+            expression = json.load(f).get("expression")
+            if expression:
+                return expression
+    except Exception:
+        pass
     try:
         with open(CRON_FILE) as f:
             for line in f:

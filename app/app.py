@@ -25,7 +25,18 @@ HEADERS_AUTH_FILE = f"{AUTH_DIR}/headers_auth.json"
 OAUTH_FILE = f"{AUTH_DIR}/oauth.json"
 OAUTH_CLIENT_FILE = f"{AUTH_DIR}/oauth_client.json"
 CRON_FILE        = "/etc/cron.d/ytmusic"
-CRON_SUFFIX      = "root python /app/scripts/scheduler.py >> /var/log/cron.log 2>&1"
+# Log to the bind mount, not /var/log: that path is in the writable layer
+# too, so a recreate destroys the only record that the job ever ran. An
+# absent cron.log then looks identical to "never fired".
+CRON_SUFFIX      = ("root python /app/scripts/scheduler.py "
+                    ">> /app/data/logs/cron.log 2>&1")
+# The schedule's home is here, on the bind mount. /etc/cron.d lives in the
+# container's writable layer, so every `docker compose up` that recreates the
+# container silently discards it — the schedule vanishes, cron has nothing to
+# fire, and the UI shows an empty box because it reads the file back. That is
+# exactly how three deploys in one day left the 03:00 job never running.
+SCHEDULE_FILE    = f"{DATA_DIR}/schedule.json"
+DEFAULT_CRON     = "0 3 * * *"
 SELECTION_FILE   = f"{DATA_DIR}/playlist_selection.json"
 VIBE_DIR         = f"{DATA_DIR}/vibe"
 SORT_QUEUE_FILE  = f"{VIBE_DIR}/sort_queue.json"
@@ -559,8 +570,26 @@ def download_art(filename):
     return "", 404
 
 
-@app.route("/api/cron", methods=["GET"])
-def get_cron():
+def _cron_line(expression):
+    return f"{expression} {CRON_SUFFIX}\n"
+
+
+def _cron_file_matches(expression):
+    """Whether the installed file is exactly what we'd write today.
+
+    Compares the whole line, not just the schedule: the command changed once
+    (the log path moved to persistent storage) and comparing expressions alone
+    would have left every existing container on the old one forever.
+    """
+    try:
+        with open(CRON_FILE) as f:
+            return f.read() == _cron_line(expression)
+    except Exception:
+        return False
+
+
+def _expression_from_cron_file():
+    """Read the 5-field expression out of /etc/cron.d/ytmusic, if it's there."""
     try:
         with open(CRON_FILE) as f:
             for line in f:
@@ -569,8 +598,80 @@ def get_cron():
                     continue
                 parts = line.split()
                 if len(parts) >= 5:
-                    return jsonify({"expression": " ".join(parts[:5])})
-        return jsonify({"expression": ""})
+                    return " ".join(parts[:5])
+    except Exception:
+        pass
+    return None
+
+
+def read_schedule():
+    """The persisted expression, migrating an older container's if needed."""
+    try:
+        with open(SCHEDULE_FILE, encoding="utf-8") as f:
+            expression = json.load(f).get("expression")
+            if expression:
+                return expression
+    except Exception:
+        pass
+    # Nothing persisted yet: adopt whatever the container is currently running
+    # so upgrading doesn't silently reset someone's schedule.
+    return _expression_from_cron_file()
+
+
+def write_schedule(expression):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    tmp = SCHEDULE_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"expression": expression,
+                   "updated_at": datetime.datetime.utcnow().isoformat()}, f,
+                  indent=2)
+    os.replace(tmp, SCHEDULE_FILE)
+
+
+def write_cron_file(expression):
+    """Materialise /etc/cron.d/ytmusic from an expression.
+
+    Debian's cron silently ignores entries in cron.d that are group- or
+    world-writable, and wants a trailing newline — both failures are quiet, so
+    they're worth being explicit about rather than trusting the default umask.
+    """
+    os.makedirs(os.path.dirname(CRON_FILE), exist_ok=True)
+    with open(CRON_FILE, "w") as f:
+        f.write(f"{expression} {CRON_SUFFIX}\n")
+    os.chmod(CRON_FILE, 0o644)
+
+
+def ensure_cron():
+    """Rebuild the cron file from persistent storage. Safe to call repeatedly.
+
+    Called at startup because the container's writable layer doesn't survive a
+    recreate. Without this, the schedule only exists between someone saving it
+    in the UI and the next deploy.
+    """
+    expression = read_schedule() or DEFAULT_CRON
+    try:
+        if not _cron_file_matches(expression):
+            write_cron_file(expression)
+            subprocess.run(["service", "cron", "reload"], capture_output=True)
+        write_schedule(expression)
+    except Exception as e:
+        print(f"[cron] could not restore schedule {expression!r}: {e}")
+        return None
+    return expression
+
+
+@app.route("/api/cron", methods=["GET"])
+def get_cron():
+    try:
+        expression = read_schedule()
+        if not expression:
+            return jsonify({"expression": ""})
+        # Self-heal: if the container was recreated since the schedule was
+        # saved, the cron file is gone even though we still know the schedule.
+        if not _cron_file_matches(expression):
+            write_cron_file(expression)
+            subprocess.run(["service", "cron", "reload"], capture_output=True)
+        return jsonify({"expression": expression})
     except Exception as e:
         return jsonify({"expression": "", "error": str(e)})
 
@@ -586,8 +687,10 @@ def set_cron():
     except Exception as e:
         return jsonify({"error": f"Invalid expression: {e}"}), 400
     try:
-        with open(CRON_FILE, "w") as f:
-            f.write(f"{expression} {CRON_SUFFIX}\n")
+        # Persist first: the bind mount is the copy that survives a recreate,
+        # and the cron file is derived from it rather than the other way round.
+        write_schedule(expression)
+        write_cron_file(expression)
         subprocess.run(["service", "cron", "reload"], capture_output=True)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -873,4 +976,9 @@ def sort_skip():
 
 
 if __name__ == "__main__":
+    # Before serving: the container may have just been recreated, in which case
+    # /etc/cron.d/ytmusic is gone and nothing would ever fire.
+    restored = ensure_cron()
+    if restored:
+        print(f"[cron] schedule active: {restored}")
     app.run(host="0.0.0.0", port=8080)

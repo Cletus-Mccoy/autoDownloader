@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+# Unbuffered: this runs as a long-lived container, so block-buffered stdout
+# means print() output sits invisible in a buffer instead of reaching
+# `docker logs` — which matters when the thing you're debugging is a scheduled
+# job that leaves no other trace.
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # Node comes from NodeSource, not Debian. Debian bookworm ships Node 20, which

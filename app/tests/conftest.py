@@ -41,6 +41,8 @@ def flask_app(data_dir, monkeypatch, tmp_path):
     monkeypatch.setattr(flask_module, "OAUTH_CLIENT_FILE", oauth_client)
     monkeypatch.setattr(flask_module, "SELECTION_FILE",    str(data_dir / "playlist_selection.json"))
     monkeypatch.setattr(flask_module, "CRON_FILE",         str(tmp_path / "crontab"))
+    monkeypatch.setattr(flask_module, "SCHEDULE_FILE",     str(data_dir / "schedule.json"))
+    monkeypatch.setattr(flask_module, "DATA_DIR",          str(data_dir))
 
     vibe_dir = tmp_path / "vibe"
     (vibe_dir / "audio").mkdir(parents=True)
