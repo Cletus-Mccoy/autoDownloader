@@ -21,7 +21,7 @@ import os
 import joblib
 import numpy as np
 
-from . import config, library, model, probe, sweep
+from . import audio, config, embed, library, model, probe, sweep
 
 
 def nested_evaluation(X, y, target_precision, outer_folds=5):
@@ -89,12 +89,51 @@ def nested_evaluation(X, y, target_precision, outer_folds=5):
     return rows
 
 
+def ensure_embeddings(lib, backend, exclude, min_tracks=None, workers=3,
+                      max_new=None, prune_audio=False):
+    """Fetch and embed every labelled track that has no vector yet.
+
+    Training used to assume the probe had already built the embedding cache.
+    In the container nobody ever ran the probe, so the nightly retrain exited
+    with "No embedding cache" every night from the day it shipped, and the
+    sorter never placed a single track. Labels come from the playlists, so
+    the training set changes every night anyway; fetching what's missing is
+    part of training, not a one-off someone has to remember.
+
+    max_new bounds a first run on an empty cache: it drains over several
+    nights rather than pulling every labelled track at once, and training
+    proceeds on whatever is embedded so far.
+
+    Returns the number of labelled tracks still without a vector.
+    """
+    rows, _ = library.labelled_tracks(lib, min_tracks=min_tracks,
+                                      exclude=exclude)
+    have = embed.cached_ids(backend)
+    missing = [r for r in rows if r["videoId"] not in have]
+    print(f"Embeddings ({backend}): {len(rows) - len(missing)} of "
+          f"{len(rows)} labelled tracks cached")
+    if not missing:
+        return 0
+
+    paths = audio.fetch_many(missing, workers=workers, max_new=max_new)
+    if paths:
+        embed.embed_tracks(paths, backend=backend, prune_audio=prune_audio)
+    have = embed.cached_ids(backend)
+    still_missing = sum(1 for r in missing if r["videoId"] not in have)
+    if still_missing:
+        print(f"  {still_missing} labelled track(s) still unembedded; "
+              "training on the rest")
+    return still_missing
+
+
 def train(backend, exclude, target_precision, min_tracks=None, refresh=False,
-          nested=False, min_folds=4, tolerance=0.05):
-    if refresh:
-        # Re-read playlists first: every track you placed from the review queue
-        # is a new label, and picking it up is the whole feedback loop.
-        library.load_library(refresh=True)
+          nested=False, min_folds=4, tolerance=0.05, workers=3, max_new=None,
+          prune_audio=False):
+    # Re-read playlists first: every track you placed from the review queue
+    # is a new label, and picking it up is the whole feedback loop.
+    lib = library.load_library(refresh=refresh)
+    ensure_embeddings(lib, backend, exclude, min_tracks, workers=workers,
+                      max_new=max_new, prune_audio=prune_audio)
     X, y, stats, sizes = sweep.load_cached(backend, exclude, min_tracks)
     X, y, _, thin = probe.drop_thin_classes(X, y, list(range(len(y))))
     if thin:
@@ -225,13 +264,26 @@ def main():
     parser.add_argument("--refresh-library", action="store_true",
                         help="re-read playlists first, so decisions made "
                              "in the review queue become training labels")
+    parser.add_argument("--workers", type=int, default=3,
+                        help="parallel yt-dlp downloads for unembedded "
+                             "labelled tracks (default 3)")
+    parser.add_argument("--max-new-audio", type=int, default=None, metavar="N",
+                        help="cap snippet downloads this run; the rest wait "
+                             "for the next one")
+    parser.add_argument("--prune-audio", action="store_true",
+                        help="delete each snippet once its vector is cached")
     args = parser.parse_args()
 
     config.ensure_dirs()
-    fitted, classes, thresholds, nested_rows, meta = train(
-        args.backend, args.exclude, args.target_precision, args.min_tracks,
-        refresh=args.refresh_library, nested=args.nested,
-        min_folds=args.min_folds, tolerance=args.precision_tolerance)
+    try:
+        fitted, classes, thresholds, nested_rows, meta = train(
+            args.backend, args.exclude, args.target_precision, args.min_tracks,
+            refresh=args.refresh_library, nested=args.nested,
+            min_folds=args.min_folds, tolerance=args.precision_tolerance,
+            workers=args.workers, max_new=args.max_new_audio,
+            prune_audio=args.prune_audio)
+    except library.AuthError as e:
+        raise SystemExit(f"\n{e}")
     if nested_rows:
         meta["nested"] = nested_rows
 

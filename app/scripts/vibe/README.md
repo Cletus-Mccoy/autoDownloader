@@ -79,10 +79,14 @@ curl -o app/data/vibe/discogs-effnet-bs64-1.pb \
 `scripts/scheduler.py` — the existing cron entry, unchanged — now runs three
 steps in order:
 
-1. **Retrain** (`vibe_train.py --refresh-library`). Re-reads playlists, so every
-   track placed from the review queue since last night becomes a training
-   label. This is the whole feedback loop, and it needs no separate store:
-   picking a playlist in the UI *is* the label.
+1. **Retrain** (`vibe_train.py --refresh-library --nested --max-new-audio 50`).
+   Re-reads playlists, so every track placed from the review queue since last
+   night becomes a training label. This is the whole feedback loop, and it
+   needs no separate store: picking a playlist in the UI *is* the label.
+   Labelled tracks without a vector are fetched and embedded as part of this
+   step, under the same nightly cap, so a fresh container bootstraps itself
+   over a few nights instead of waiting for someone to run the probe. It
+   needs `discogs-effnet-bs64-1.pb` in `data/vibe/` (see `embed.py`).
 2. **Sort** (`vibe_route.py --execute --max-new-audio 50`). Files confident
    tracks, queues the rest. The cap bounds the nightly download; a backlog
    drains over several nights instead of one run fetching thousands.
@@ -105,10 +109,9 @@ the nightly fetch cap.
 | `audio.py` | yt-dlp 60s mono 16kHz snippet cache, keyed by videoId |
 | `embed.py` | pluggable embedding backends, cached per backend |
 | `probe.py` | sample -> fetch -> embed -> cross-validate -> report |
-
-Still to build, only if the probe says it's worth it: `train.py` (fit and
-persist per-playlist thresholds), `route.py` (apply, dry-run by default,
-append-only decision ledger), and a scheduler entrypoint.
+| `train.py` | fetch/embed missing labelled tracks, fit, persist per-playlist thresholds |
+| `route.py` | apply the model: place confident tracks, queue the rest |
+| `recall.py` | take back automatic placements by playlists that lost their threshold |
 
 ## Design rules for the eventual router
 

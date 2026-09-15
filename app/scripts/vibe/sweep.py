@@ -42,12 +42,17 @@ def load_cached(backend, exclude, min_tracks=None):
 
     cache_path = os.path.join(config.EMBED_DIR, f"{backend}.npz")
     if not os.path.exists(cache_path):
-        raise SystemExit(f"No embedding cache at {cache_path}. Run the probe "
-                         f"with --backend {backend} first.")
+        raise SystemExit(f"No embedding cache at {cache_path}. Nothing has "
+                         f"been embedded with the {backend} backend yet — "
+                         "vibe_train.py fetches and embeds labelled tracks "
+                         "itself, so check its audio/embedding output above.")
     with np.load(cache_path) as data:
         vectors = {k: data[k] for k in data.files}
 
     kept = [r for r in rows if r["videoId"] in vectors]
+    if not kept:
+        raise SystemExit(f"None of the {len(rows)} labelled tracks has a "
+                         f"{backend} vector; nothing to train on.")
     X = np.vstack([vectors[r["videoId"]] for r in kept])
     y = np.array([r["label"] for r in kept])
     sizes = {p["title"]: len(p["tracks"]) for p in lib["playlists"]}

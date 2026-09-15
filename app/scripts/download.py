@@ -198,6 +198,15 @@ def main():
     print(f"\n📁 Download location: {BASE_DIR}")
 
     playlists = get_playlists()
+    if not playlists and get_cookie_header():
+        # A signed-out session doesn't error: YouTube serves the anonymous
+        # page and the library comes back empty. Treated as success, that
+        # was three weeks of "Downloading 0 selected playlist(s)" with a green
+        # status. Cookies are present, so an empty library means they're dead.
+        print("\n✗ YouTube Music returned no library playlists although auth "
+              "headers are present — the stored cookies are expired or "
+              "revoked. Re-authenticate via the web UI.")
+        sys.exit(1)
 
     selected_ids = get_selection()
     if selected_ids:

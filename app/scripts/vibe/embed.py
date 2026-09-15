@@ -216,6 +216,20 @@ BACKENDS = {
 }
 
 
+def cached_ids(backend):
+    """videoIds that already have a vector for this backend.
+
+    Reading the keys of an .npz doesn't decompress the arrays, so this is cheap
+    even for thousands of tracks. Callers use it to skip the audio fetch — the
+    slow, rate-limited stage — for anything already embedded.
+    """
+    cache_path = os.path.join(config.EMBED_DIR, f"{backend}.npz")
+    if not os.path.exists(cache_path):
+        return set()
+    with np.load(cache_path) as data:
+        return set(data.files)
+
+
 def embed_tracks(paths_by_id, backend="mfcc", prune_audio=False):
     """Embed every cached snippet. Returns {videoId: vector}.
 

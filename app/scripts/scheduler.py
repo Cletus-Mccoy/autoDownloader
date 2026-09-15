@@ -78,7 +78,8 @@ def run_downloader():
             # can leave alone and one that quietly misfiles.
             _step("Retraining the sorter",
                   ["python3", "/app/scripts/vibe_train.py",
-                   "--refresh-library", "--nested"], f)
+                   "--refresh-library", "--nested",
+                   "--max-new-audio", SORTER_MAX_NEW_AUDIO], f)
             _step("Sorting liked tracks",
                   ["python3", "/app/scripts/vibe_route.py", "--execute",
                    "--no-refresh-library",
