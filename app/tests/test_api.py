@@ -467,3 +467,14 @@ def test_ensure_cron_adopts_existing_container_schedule(client):
     assert m.ensure_cron() == "45 6 * * *"
     with open(m.SCHEDULE_FILE, encoding="utf-8") as f:
         assert json.load(f)["expression"] == "45 6 * * *"
+
+
+def test_cron_line_uses_absolute_interpreter(client, flask_app):
+    """cron runs jobs with PATH=/usr/bin:/bin; the image's python is in
+    /usr/local/bin, so a bare `python` fires 'python: not found' at 03:00."""
+    import app as flask_module
+    r = client.post("/api/cron", json={"expression": "0 3 * * *"})
+    assert r.status_code == 200
+    with open(flask_module.CRON_FILE) as f:
+        line = f.read().strip()
+    assert line.startswith("0 3 * * * root /usr/local/bin/python3 /app/scripts/scheduler.py")
