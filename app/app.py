@@ -28,7 +28,13 @@ CRON_FILE        = "/etc/cron.d/ytmusic"
 # Log to the bind mount, not /var/log: that path is in the writable layer
 # too, so a recreate destroys the only record that the job ever ran. An
 # absent cron.log then looks identical to "never fired".
-CRON_SUFFIX      = ("root python /app/scripts/scheduler.py "
+# Absolute interpreter, not `python`: Debian's cron runs jobs with
+# PATH=/usr/bin:/bin, and the image's python lives in /usr/local/bin. The bare
+# name resolved only while cron happened to be (re)started from the app's
+# environment; a freshly created container fired at 03:00 and logged
+# "python: not found" instead of running. Whole-line comparison in
+# _cron_file_matches means existing containers pick this up on startup.
+CRON_SUFFIX      = ("root /usr/local/bin/python3 /app/scripts/scheduler.py "
                     ">> /app/data/logs/cron.log 2>&1")
 # The schedule's home is here, on the bind mount. /etc/cron.d lives in the
 # container's writable layer, so every `docker compose up` that recreates the
