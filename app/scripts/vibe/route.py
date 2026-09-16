@@ -105,6 +105,14 @@ def log_decisions(records, kind):
                                ensure_ascii=False) + "\n")
 
 
+def write_queue(tracks):
+    tmp = queue_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"generated_at": datetime.datetime.utcnow().isoformat(),
+                   "tracks": tracks}, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, queue_path())
+
+
 def place(placements, lib):
     ytmusic = headers_to_ytmusic()
     library.check_auth(ytmusic)
@@ -200,15 +208,27 @@ def main():
               "Re-run with --execute.")
         return
 
+    # Queue first. It is the product of everything above — library read,
+    # snippet downloads, embedding, scoring — and needs no session to write.
+    # Placing does need one, and pasted cookies can die between embedding and
+    # here: on 2026-09-16 that threw away a 473-track review queue that had
+    # taken twenty minutes to build.
+    write_queue(queued)
+
     if placements:
         print()
-        done, failed = place(placements, lib)
+        try:
+            done, failed = place(placements, lib)
+        except library.AuthError as e:
+            print(f"\n{e}")
+            print(f"\n{len(placements)} confident placement(s) could not be "
+                  "added; they are in the review queue instead, so nothing "
+                  "is lost. Re-authenticate and the next run places them.")
+            write_queue(placements + queued)
+            raise SystemExit(1)
         log_decisions(placements, "auto")
         print(f"Placed {done}, failed {failed}")
 
-    with open(queue_path(), "w", encoding="utf-8") as f:
-        json.dump({"generated_at": datetime.datetime.utcnow().isoformat(),
-                   "tracks": queued}, f, indent=2, ensure_ascii=False)
     print(f"Review queue ({len(queued)}): {queue_path()}")
     print("Open the web UI at /sort to place them.")
 

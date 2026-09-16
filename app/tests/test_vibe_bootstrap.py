@@ -126,3 +126,33 @@ def test_route_fetches_audio_only_for_unembedded(vibe_dirs, monkeypatch, capsys)
     out = capsys.readouterr().out
     assert "1 already embedded, 1 need audio" in out
     assert "1 confident placement(s)" in out
+
+
+def test_route_keeps_queue_when_placement_auth_fails(vibe_dirs, monkeypatch, capsys):
+    """Cookies dying between embedding and placement must not throw away the
+    review queue: it is written first, and the confident placements join it."""
+    import joblib, json
+    from vibe import library
+    _seed_cache(vibe_dirs, "effnet", ["n1", "n2"])
+    joblib.dump({"pipeline": _ConfidentPipe(), "classes": ["ONE", "TWO"],
+                 "backend": "effnet", "trained_at": "t", "n_train": 4,
+                 "top1": 1.0, "top3": 1.0}, vibe_dirs / "model.joblib")
+    (vibe_dirs / "thresholds.json").write_text(json.dumps(
+        {"thresholds": {"ONE": {"threshold": 0.8}, "TWO": {"threshold": None}}}))
+    monkeypatch.setattr(route.library, "load_library", lambda refresh=False: _lib())
+    monkeypatch.setattr(route.audio, "fetch_many", lambda tracks, **k: {})
+    monkeypatch.setattr(route.embed, "embed_tracks",
+                        lambda paths, **k: {v: np.ones(4) for v in paths})
+
+    def dead_session(placements, lib):
+        raise library.AuthError("session rejected")
+    monkeypatch.setattr(route, "place", dead_session)
+    monkeypatch.setattr("sys.argv", ["vibe_route.py", "--no-refresh-library", "--execute"])
+
+    with pytest.raises(SystemExit) as exc:
+        route.main()
+
+    assert exc.value.code == 1
+    queue = json.loads((vibe_dirs / "sort_queue.json").read_text())
+    assert sorted(t["videoId"] for t in queue["tracks"]) == ["n1", "n2"]
+    assert "in the review queue instead" in capsys.readouterr().out
