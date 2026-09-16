@@ -124,3 +124,29 @@ def test_download_uses_cookies_flag_not_add_header(tmp_path, monkeypatch):
             assert not cmd[i + 1].lower().startswith("cookie:"), (
                 "must not pass Cookie via --add-header (deprecated by yt-dlp)"
             )
+
+
+def test_main_fails_when_library_empty_but_cookies_present(tmp_path, monkeypatch, capsys):
+    """A signed-out session returns an empty library rather than an error.
+    With cookies on disk that means they are dead, and the run must fail
+    instead of reporting 'Downloading 0 playlist(s)' as success."""
+    import pytest
+
+    monkeypatch.setattr(dl, "get_cookie_header", lambda: "SID=abc")
+    monkeypatch.setattr(dl, "get_playlists", lambda: [])
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout="2026.07.04"))
+
+    with pytest.raises(SystemExit) as exc:
+        dl.main()
+    assert exc.value.code == 1
+    assert "expired or revoked" in capsys.readouterr().out
+
+
+def test_main_tolerates_empty_library_without_cookies(tmp_path, monkeypatch):
+    """No cookies at all is the first-run state: warn, download nothing, succeed."""
+    monkeypatch.setattr(dl, "get_cookie_header", lambda: None)
+    monkeypatch.setattr(dl, "get_playlists", lambda: [])
+    monkeypatch.setattr(dl, "get_selection", lambda: [])
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout="2026.07.04"))
+
+    dl.main()  # no SystemExit

@@ -170,8 +170,18 @@ def main():
         print("Nothing to sort.")
         return
 
-    paths = audio.fetch_many(pending, workers=args.workers,
-                             max_new=args.max_new_audio)
+    # Only tracks without a vector need audio. Fetching for every pending
+    # track re-downloaded snippets the embedder would never open — with a
+    # nightly cap of 50 that was weeks of downloads before anything new got
+    # scored — and made the audio cache a hard dependency it isn't.
+    embedded = embed.cached_ids(bundle["backend"])
+    need_audio = [t for t in pending if t["videoId"] not in embedded]
+    print(f"{len(pending) - len(need_audio)} already embedded, "
+          f"{len(need_audio)} need audio")
+    paths = {t["videoId"]: None for t in pending if t["videoId"] in embedded}
+    if need_audio:
+        paths.update(audio.fetch_many(need_audio, workers=args.workers,
+                                      max_new=args.max_new_audio))
     vectors = embed.embed_tracks(paths, backend=bundle["backend"],
                                  prune_audio=args.prune_audio)
     placements, queued = decide(vectors, pending, bundle, thresholds,
