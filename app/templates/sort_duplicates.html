@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duplicates — YT Music</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        kbd { font-family: ui-monospace, monospace; }
+        .fade-in { animation: fade .18s ease-out; }
+        @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen" style="background-color:#0a0f1a">
+
+<div class="max-w-2xl mx-auto px-4 py-8">
+
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-2">
+            <span class="text-xl">🎵</span>
+            <h1 class="text-base font-bold tracking-tight text-white">Duplicates</h1>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="/sort" class="px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800 hover:bg-indigo-600 hover:border-indigo-500 text-gray-200 hover:text-white text-xs font-medium transition-colors">New likes</a>
+            <a href="/sort/misfiled" class="px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800 hover:bg-indigo-600 hover:border-indigo-500 text-gray-200 hover:text-white text-xs font-medium transition-colors">Misfiled</a>
+            <a href="/sort/stats" class="px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800 hover:bg-indigo-600 hover:border-indigo-500 text-gray-200 hover:text-white text-xs font-medium transition-colors">Stats</a>
+            <a href="/" class="px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800 hover:bg-indigo-600 hover:border-indigo-500 text-gray-200 hover:text-white text-xs font-medium transition-colors">← Downloader</a>
+        </div>
+    </div>
+
+    <div id="tier-a" class="hidden mb-5 px-4 py-3 rounded-lg bg-amber-900/20 border border-amber-800/40 flex items-center justify-between gap-3">
+        <div class="text-xs text-amber-200/90"><span id="tier-a-text"></span></div>
+        <button onclick="removeTierA()" class="px-3 py-1.5 rounded-lg bg-amber-700 hover:bg-amber-600 text-xs font-semibold flex-none">Remove them</button>
+    </div>
+
+    <div class="mb-5">
+        <div class="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+            <span id="progress-text">Loading…</span>
+            <span id="session-text"></span>
+        </div>
+        <div class="h-1 bg-gray-800 rounded-full overflow-hidden">
+            <div id="progress-bar" class="h-full bg-indigo-500 transition-all duration-300" style="width:0%"></div>
+        </div>
+    </div>
+
+    <div id="card" class="hidden bg-gray-900 border border-gray-800 rounded-xl p-6"></div>
+
+    <div id="empty" class="hidden text-center py-20">
+        <div class="text-4xl mb-3">✓</div>
+        <div class="text-gray-200 font-medium">No duplicates left</div>
+        <div class="text-sm text-gray-500 mt-1">Checked against the library as of the last nightly refresh.</div>
+    </div>
+
+    <div class="mt-6 text-xs text-gray-600 leading-relaxed">
+        <span class="text-gray-500">B</span> is the same upload in several playlists: the sorter learns
+        single labels, so pick where it lives. <span class="text-gray-500">C</span> is the same song under
+        different uploads: keep one copy, the others are removed from every playlist they are in.
+        <div class="mt-2">
+            <kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">1</kbd>–<kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">9</kbd> keep ·
+            <kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">s</kbd> skip ·
+            <kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">space</kbd> play/pause ·
+            <kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">→</kbd> later ·
+            <kbd class="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700">←</kbd> back
+        </div>
+    </div>
+</div>
+
+<script>
+let groups = [], index = 0, decided = 0, total = 0, tierA = null;
+
+async function load() {
+    const d = await (await fetch('/api/sort/duplicates')).json();
+    groups = d.groups || []; total = groups.length;
+    tierA = d;
+    const box = document.getElementById('tier-a');
+    if (d.tier_a_extra > 0) {
+        document.getElementById('tier-a-text').textContent =
+            `${d.tier_a_extra} exact duplicate entr${d.tier_a_extra === 1 ? 'y' : 'ies'} (same track listed twice in one playlist) across ${d.tier_a.length} track(s). Certain mistakes, no review needed.`;
+        box.classList.remove('hidden');
+    } else box.classList.add('hidden');
+    show();
+}
+
+function show() {
+    const card = document.getElementById('card'), empty = document.getElementById('empty');
+    if (!groups.length) {
+        card.classList.add('hidden'); empty.classList.remove('hidden');
+        document.getElementById('progress-text').textContent = '';
+        document.getElementById('progress-bar').style.width = '100%';
+        return;
+    }
+    if (index >= groups.length) index = groups.length - 1;
+    if (index < 0) index = 0;
+    const g = groups[index];
+    empty.classList.add('hidden'); card.classList.remove('hidden');
+    document.getElementById('progress-text').textContent = `${index + 1} of ${groups.length} left`;
+    document.getElementById('session-text').textContent = decided ? `${decided} resolved this session` : '';
+    document.getElementById('progress-bar').style.width = total ? `${(decided / total) * 100}%` : '0%';
+
+    const options = g.options.map((o, i) => `
+      <div class="flex gap-2">
+        <button onclick="resolve(${JSON.stringify(o.value).replace(/"/g, '&quot;')})"
+                class="group text-left px-3.5 py-3 rounded-lg bg-gray-800 hover:bg-indigo-600 border border-gray-700 hover:border-indigo-500 transition-colors flex items-center justify-between gap-3 w-full">
+            <span class="flex items-center gap-2.5 min-w-0">
+                <span class="text-[10px] text-gray-500 group-hover:text-indigo-200 border border-gray-600 rounded px-1.5 py-0.5 flex-shrink-0">${i + 1}</span>
+                <span class="min-w-0">
+                    <span class="text-sm truncate block">keep ${g.tier === 'B' ? 'in ' : ''}${escapeHtml(o.label)}</span>
+                    ${o.playlists ? `<span class="text-[11px] text-gray-500 group-hover:text-indigo-200 truncate block">in ${escapeHtml(o.playlists.join(', '))}</span>` : ''}
+                </span>
+            </span>
+        </button>
+        ${o.videoId ? (o.has_preview
+            ? `<button type="button" onclick="playCopy('${o.videoId}')" title="play this copy" class="flex-none w-9 rounded-lg border border-gray-700 text-gray-500 hover:text-indigo-200 hover:bg-indigo-600 hover:border-indigo-500 transition-colors text-sm">▶</button>`
+            : `<a href="https://music.youtube.com/watch?v=${o.videoId}" target="_blank" title="no cached snippet — open on YouTube Music" class="flex-none w-9 rounded-lg border border-gray-700 text-gray-600 text-sm flex items-center justify-center">↗</a>`) : ''}
+      </div>`).join('');
+
+    card.innerHTML = `
+      <div class="fade-in">
+        <div class="flex items-center gap-2 mb-3">
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded ${g.tier === 'B' ? 'bg-indigo-900/60 text-indigo-200' : 'bg-purple-900/60 text-purple-200'}">${g.tier}</span>
+            <span class="text-xs text-gray-500">${escapeHtml(g.note)}</span>
+        </div>
+        <div class="mb-4">
+            <div class="text-lg font-semibold text-white leading-snug">${escapeHtml(g.title || '?')}</div>
+            <div class="text-sm text-gray-400 mt-0.5">${escapeHtml(g.artist || '?')}</div>
+        </div>
+        <audio id="player" class="w-full mb-1" controls preload="auto" src="/api/sort/preview/${g.videoId}"></audio>
+        <div id="preview-note" class="text-[11px] text-gray-600 mb-5">60s from the middle of the track${g.tier === 'C' ? ' · ▶ next to a copy plays that upload' : ''}</div>
+        <div class="grid gap-2 mb-4">${options}</div>
+        <div class="flex items-center gap-2">
+            <button onclick="skip()" class="px-3 py-2 text-sm text-gray-200 border border-gray-600 rounded-lg bg-gray-800 hover:bg-gray-700 transition-colors">Skip</button>
+            <button onclick="move(1)" class="px-3 py-2 text-sm text-gray-400 hover:text-gray-200 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors">Later →</button>
+        </div>
+        <div id="msg" class="text-xs mt-3 h-4"></div>
+      </div>`;
+    const player = document.getElementById('player');
+    player.onerror = () => {
+        document.getElementById('preview-note').innerHTML =
+            `No cached preview — <a class="text-indigo-400 hover:text-indigo-300 underline" href="https://music.youtube.com/watch?v=${g.videoId}" target="_blank">open in YT Music</a>`;
+        player.classList.add('hidden');
+    };
+}
+
+function playCopy(videoId) {
+    const p = document.getElementById('player');
+    p.classList.remove('hidden'); p.src = `/api/sort/preview/${videoId}`; p.play().catch(() => {});
+}
+function move(step) { index += step; show(); }
+function setMsg(text, cls) { const m = document.getElementById('msg'); m.textContent = text; m.className = 'text-xs mt-3 h-4 ' + cls; }
+
+async function post(url, body) {
+    const res = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    return res.json();
+}
+async function resolve(keep) {
+    const g = groups[index];
+    setMsg('Removing the other copies…', 'text-gray-500');
+    const d = await post('/api/sort/duplicates/resolve', {key: g.key, keep});
+    if (d.ok) consume(); else setMsg(d.error || 'Failed', 'text-red-400');
+}
+async function skip() {
+    const d = await post('/api/sort/duplicates/skip', {key: groups[index].key});
+    if (d.ok) consume(); else setMsg(d.error || 'Failed', 'text-red-400');
+}
+async function removeTierA() {
+    const btn = document.querySelector('#tier-a button'); btn.disabled = true; btn.textContent = 'Removing…';
+    const d = await post('/api/sort/duplicates/resolve', {key: 'A'});
+    if (d.ok) { document.getElementById('tier-a').classList.add('hidden'); }
+    else { btn.disabled = false; btn.textContent = 'Retry'; document.getElementById('tier-a-text').textContent = d.error || 'Failed'; }
+}
+function consume() { groups.splice(index, 1); decided++; show(); }
+
+document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+    if (!groups.length) return;
+    const player = document.getElementById('player');
+    if (e.key === ' ') { if (player) { player.paused ? player.play() : player.pause(); } e.preventDefault(); }
+    else if (e.key === 'ArrowRight') { move(1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft') { move(-1); e.preventDefault(); }
+    else if (e.key === 's') { skip(); e.preventDefault(); }
+    else if (/^[1-9]$/.test(e.key)) {
+        const btn = document.querySelectorAll('#card .grid > div > button:first-child')[Number(e.key) - 1];
+        if (btn) { btn.click(); e.preventDefault(); }
+    }
+});
+function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
+load();
+</script>
+</body>
+</html>
