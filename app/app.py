@@ -709,6 +709,19 @@ def set_cron():
 
 # ── Vibe sorter: review queue for tracks the model wasn't confident about ────
 
+def _json_safe(obj):
+    """NaN/inf -> None, recursively. Python's json module emits bare NaN,
+    which is not JSON: the browser's parser throws and the stats page sat on
+    "Loading…" the night a playlist trained with zero accepted tracks."""
+    if isinstance(obj, float):
+        return obj if obj == obj and obj not in (float("inf"), float("-inf")) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
 def _read_json(path, default):
     try:
         with open(path, encoding="utf-8") as f:
@@ -902,7 +915,7 @@ def sort_stats():
             "manual": activity.get("manual", 0),
         })
 
-    return jsonify({
+    return jsonify(_json_safe({
         "model": {
             "trained_at": meta.get("trained_at"),
             "n_train": meta.get("n_train"),
@@ -927,7 +940,7 @@ def sort_stats():
         "by_day": [{"day": d, **v} for d, v in sorted(by_day.items())][-14:],
         "playlists": rows,
         "nested": meta.get("nested"),
-    })
+    }))
 
 
 _typical_cache = {"key": None, "value": None}

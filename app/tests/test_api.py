@@ -490,3 +490,22 @@ def test_sort_pages_wire_playlist_sound_preview(client):
         assert 'id="playlist-player"' in html
         # header nav is buttons, not bare links, and every page links the other two
         assert html.count("rounded-lg border border-gray-700 bg-gray-800 hover:bg-indigo-600") >= 3
+
+
+def test_sort_stats_never_emits_nan(client, flask_app):
+    """thresholds.json can carry NaN precision (zero accepted tracks); the
+    API must still be valid JSON for the browser."""
+    import app as flask_module, json, math
+    with open(f"{flask_module.VIBE_DIR}/thresholds.json", "w") as f:
+        f.write(json.dumps({"backend": "effnet", "trained_at": "t", "n_train": 1,
+                            "top1": float("nan"), "top3": 0.5,
+                            "thresholds": {"ONE": {"threshold": None, "precision": float("nan"),
+                                                   "recall": 0.0, "support": 3}},
+                            "nested": [{"playlist": "ONE", "precision": float("nan")}]}))
+    r = client.get("/api/sort/stats")
+    body = r.get_data(as_text=True)
+    assert "NaN" not in body
+    d = json.loads(body, parse_constant=lambda c: (_ for _ in ()).throw(ValueError(c)))
+    assert d["model"]["top1"] is None
+    assert d["playlists"][0]["precision"] is None
+    assert d["nested"][0]["precision"] is None
