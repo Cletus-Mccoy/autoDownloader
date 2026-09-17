@@ -509,3 +509,17 @@ def test_sort_stats_never_emits_nan(client, flask_app):
     assert d["model"]["top1"] is None
     assert d["playlists"][0]["precision"] is None
     assert d["nested"][0]["precision"] is None
+
+
+def test_index_hosts_sorter_tools_in_a_modal(client):
+    html = client.get("/").get_data(as_text=True)
+    for path, label in (("/sort", "New likes"), ("/sort/misfiled", "Misfiled"),
+                        ("/sort/duplicates", "Duplicates"), ("/sort/stats", "Stats")):
+        assert f"openToolModal('{path}'" in html and label in html
+    assert 'id="tool-frame"' in html and 'id="sort-queue-count"' in html
+
+
+def test_tool_pages_support_embed_mode(client):
+    for path in ("/sort", "/sort/misfiled", "/sort/duplicates", "/sort/stats"):
+        html = client.get(path + "?embed=1").get_data(as_text=True)
+        assert "has('embed')" in html and "tool-modal-close" in html

@@ -67,6 +67,12 @@
 </div>
 
 <script>
+// Embedded in the downloader's tool modal: the modal carries the title and
+// close button, so the page header only duplicates them.
+if (new URLSearchParams(location.search).has('embed')) {
+    document.querySelector('.flex.items-center.justify-between.mb-6')?.classList.add('hidden');
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') parent.postMessage('tool-modal-close', '*'); });
+}
 let groups = [], index = 0, decided = 0, total = 0, tierA = null;
 
 async function load() {
