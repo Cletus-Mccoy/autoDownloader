@@ -24,6 +24,16 @@ import numpy as np
 from . import audio, config, embed, library, model, probe, sweep
 
 
+def _nan_to_none(obj):
+    if isinstance(obj, float):
+        return obj if obj == obj and abs(obj) != float("inf") else None
+    if isinstance(obj, dict):
+        return {k: _nan_to_none(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_nan_to_none(v) for v in obj]
+    return obj
+
+
 def nested_evaluation(X, y, target_precision, outer_folds=5):
     """Honest precision: thresholds chosen on data they are never scored on.
 
@@ -293,8 +303,11 @@ def main():
 
     thresholds_path = os.path.join(config.DATA_DIR, "thresholds.json")
     with open(thresholds_path, "w", encoding="utf-8") as f:
-        json.dump({"thresholds": thresholds, **meta}, f, indent=2,
-                  ensure_ascii=False)
+        # allow_nan=False: a playlist with zero accepted tracks has NaN
+        # precision, and bare NaN in the file is not JSON — the web app's
+        # consumers would choke on it. None is the honest value.
+        json.dump(_nan_to_none({"thresholds": thresholds, **meta}), f,
+                  indent=2, ensure_ascii=False, allow_nan=False)
 
     print(f"\nModel:      {model_path}")
     print(f"Thresholds: {thresholds_path}")
