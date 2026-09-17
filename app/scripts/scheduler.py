@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import datetime
 import os
 
@@ -41,6 +42,9 @@ SORTER_ENABLED = os.getenv("VIBE_SORTER", "true").lower() == "true"
 SORTER_MAX_NEW_AUDIO = os.getenv("VIBE_MAX_NEW_AUDIO", "50")
 
 
+# sys.executable, never a bare "python3": cron runs this with PATH=/usr/bin:/bin,
+# where python3 is Debian's 3.13 with no packages. The 2026-09-17 03:00 run
+# died in all three steps with ModuleNotFoundError that way.
 def _step(name, argv, log):
     """Run one pipeline step. Returns True on success.
 
@@ -77,16 +81,16 @@ def run_downloader():
             # few extra minutes and it is the difference between a sorter you
             # can leave alone and one that quietly misfiles.
             _step("Retraining the sorter",
-                  ["python3", "/app/scripts/vibe_train.py",
+                  [sys.executable, "/app/scripts/vibe_train.py",
                    "--refresh-library", "--nested",
                    "--max-new-audio", SORTER_MAX_NEW_AUDIO], f)
             _step("Sorting liked tracks",
-                  ["python3", "/app/scripts/vibe_route.py", "--execute",
+                  [sys.executable, "/app/scripts/vibe_route.py", "--execute",
                    "--no-refresh-library",
                    "--max-new-audio", SORTER_MAX_NEW_AUDIO], f)
 
         ok = _step("Downloading playlists",
-                   ["python3", "/app/scripts/download.py"], f)
+                   [sys.executable, "/app/scripts/download.py"], f)
 
     log_run("success" if ok else "failed", log_file)
 

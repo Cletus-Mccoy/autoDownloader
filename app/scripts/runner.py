@@ -1,9 +1,10 @@
 import subprocess
+import sys
 
 
 def run_download_job():
     subprocess.run(
-        ["python3", "/app/scripts/download.py"],
+        [sys.executable, "/app/scripts/download.py"],
         text=True
     )
     print("RUN STARTED DOWNLOAD")
@@ -11,7 +12,7 @@ def run_download_job():
 
 def run_scheduler_stream():
     process = subprocess.Popen(
-        ["python3", "-u", "/app/scripts/scheduler.py"],
+        [sys.executable, "-u", "/app/scripts/scheduler.py"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

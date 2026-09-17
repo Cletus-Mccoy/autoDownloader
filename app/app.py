@@ -4,6 +4,7 @@ import json
 import shutil
 import threading
 import subprocess
+import sys
 import datetime
 import re
 from croniter import croniter
@@ -174,7 +175,7 @@ def run_target():
         os.makedirs(LOG_DIR, exist_ok=True)
         with open(log_file, "w") as lf:
             _current_proc = subprocess.Popen(
-                ["python3", "/app/scripts/download.py"],
+                [sys.executable, "/app/scripts/download.py"],
                 stdout=lf, stderr=lf
             )
             _current_proc.wait()
