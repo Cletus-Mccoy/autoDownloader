@@ -50,6 +50,12 @@ def flask_app(data_dir, monkeypatch, tmp_path):
     monkeypatch.setattr(flask_module, "SORT_QUEUE_FILE",   str(vibe_dir / "sort_queue.json"))
     monkeypatch.setattr(flask_module, "VIBE_LIBRARY_FILE", str(vibe_dir / "library.json"))
     monkeypatch.setattr(flask_module, "DECISIONS_FILE",    str(vibe_dir / "reports" / "decisions.jsonl"))
+    # Every path derived from VIBE_DIR must be redirected here, or a test
+    # silently reads the developer's real data through the ./data bind mount.
+    monkeypatch.setattr(flask_module, "REMODEL_REVIEW_FILE",    str(vibe_dir / "reports" / "remodel_review.csv"))
+    monkeypatch.setattr(flask_module, "REMODEL_DECISIONS_FILE", str(vibe_dir / "remodel_decisions.json"))
+    monkeypatch.setattr(flask_module, "MOVES_LEDGER_FILE",      str(vibe_dir / "reports" / "moves.jsonl"))
+    flask_module._typical_cache.update(key=None, value=None)
 
     # Also patch ytmusic_auth's constants — the /auth/status route imports
     # has_oauth/has_headers from there, which read these paths directly.

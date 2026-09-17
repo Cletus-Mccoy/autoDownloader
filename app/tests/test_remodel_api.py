@@ -57,10 +57,7 @@ def remodel_env(flask_app, tmp_path, monkeypatch):
     vibe = flask_module.VIBE_DIR
     os.makedirs(f"{vibe}/reports", exist_ok=True)
     os.makedirs(f"{vibe}/audio", exist_ok=True)
-    review = f"{vibe}/reports/remodel_review.csv"
-    monkeypatch.setattr(flask_module, "REMODEL_REVIEW_FILE", review)
-    monkeypatch.setattr(flask_module, "REMODEL_DECISIONS_FILE", f"{vibe}/remodel_decisions.json")
-    monkeypatch.setattr(flask_module, "MOVES_LEDGER_FILE", f"{vibe}/reports/moves.jsonl")
+    review = flask_module.REMODEL_REVIEW_FILE   # redirected by the flask_app fixture
     with open(review, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["videoId", "artist", "title", "current", "p_current",
                                           "suggested", "p_suggested", "runner_up", "p_runner_up", "action"])
