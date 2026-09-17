@@ -478,3 +478,15 @@ def test_cron_line_uses_absolute_interpreter(client, flask_app):
     with open(flask_module.CRON_FILE) as f:
         line = f.read().strip()
     assert line.startswith("0 3 * * * root /usr/local/bin/python3 /app/scripts/scheduler.py")
+
+
+def test_sort_pages_wire_playlist_sound_preview(client):
+    """Both sorting pages load the typical-track map and render a per-playlist
+    'hear it' control next to each candidate."""
+    for path in ("/sort", "/sort/misfiled"):
+        html = client.get(path).get_data(as_text=True)
+        assert "/api/sort/typical" in html
+        assert "hearButton(" in html
+        assert 'id="playlist-player"' in html
+        # header nav is buttons, not bare links, and every page links the other two
+        assert html.count("rounded-lg border border-gray-700 bg-gray-800 hover:bg-indigo-600") >= 3

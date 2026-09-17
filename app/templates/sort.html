@@ -21,10 +21,10 @@
             <span class="text-xl">🎵</span>
             <h1 class="text-base font-bold tracking-tight text-white">Sort liked tracks</h1>
         </div>
-        <div class="flex items-center gap-4 text-xs">
-            <a href="/sort/misfiled" class="text-gray-500 hover:text-indigo-400 transition-colors">Misfiled</a>
-            <a href="/sort/stats" class="text-gray-500 hover:text-indigo-400 transition-colors">Stats</a>
-            <a href="/" class="text-gray-500 hover:text-indigo-400 transition-colors">← Downloader</a>
+        <div class="flex items-center gap-2">
+            <a href="/sort/misfiled" class="px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800 hover:bg-indigo-600 hover:border-indigo-500 text-gray-200 hover:text-white text-xs font-medium transition-colors">Misfiled</a>
+            <a href="/sort/stats" class="px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800 hover:bg-indigo-600 hover:border-indigo-500 text-gray-200 hover:text-white text-xs font-medium transition-colors">Stats</a>
+            <a href="/" class="px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800 hover:bg-indigo-600 hover:border-indigo-500 text-gray-200 hover:text-white text-xs font-medium transition-colors">← Downloader</a>
         </div>
     </div>
 
@@ -108,6 +108,7 @@ function show() {
         total ? `${(decided / total) * 100}%` : '0%';
 
     const options = (t.options || []).map((o, i) => `
+      <div class="flex gap-2">
         <button onclick="assign(${JSON.stringify(o.playlist).replace(/"/g, '&quot;')})"
                 class="group text-left px-3.5 py-3 rounded-lg bg-gray-800 hover:bg-indigo-600
                        border border-gray-700 hover:border-indigo-500 transition-colors
@@ -119,7 +120,9 @@ function show() {
             <span class="text-xs text-gray-500 group-hover:text-indigo-200 tabular-nums flex-shrink-0">
                 ${Math.round(o.confidence * 100)}%
             </span>
-        </button>`).join('');
+        </button>
+        ${hearButton(o.playlist)}
+      </div>`).join('');
 
     const others = playlists
         .filter(p => !(t.options || []).some(o => o.playlist === p))
@@ -140,6 +143,11 @@ function show() {
         </div>
 
         <div class="grid gap-2 mb-4">${options}</div>
+
+        <div id="playlist-box" class="hidden mb-4 px-3 py-2 rounded-lg bg-gray-800/60 border border-gray-800">
+            <div id="playlist-note" class="text-[11px] text-gray-500 mb-1"></div>
+            <audio id="playlist-player" class="w-full h-8" controls preload="none"></audio>
+        </div>
 
         <div class="flex items-center gap-2">
             <select id="other-select" onchange="if(this.value) assign(this.value)"
@@ -224,7 +232,7 @@ document.addEventListener('keydown', e => {
         window.open('https://music.youtube.com/watch?v=' + tracks[index].videoId, '_blank');
         e.preventDefault();
     } else if (['1', '2', '3'].includes(e.key)) {
-        const btn = document.querySelectorAll('#card .grid button')[Number(e.key) - 1];
+        const btn = document.querySelectorAll('#card .grid > div > button:first-child')[Number(e.key) - 1];
         if (btn) { btn.click(); e.preventDefault(); }
     }
 });
@@ -234,7 +242,47 @@ function escapeHtml(s) {
         ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 }
 
-load();
+// "What does this playlist sound like?" — the most typical track per playlist
+// from /api/sort/typical, playable next to each candidate without losing the
+// track preview. Loaded once; empty until the sorter has embedded something.
+let typical = {};
+async function loadTypical() {
+    try {
+        const d = await (await fetch('/api/sort/typical')).json();
+        for (const [name, info] of Object.entries(d.playlists || {})) {
+            const t = (info.typical || []).find(x => x.has_preview) || null;
+            if (t) typical[name] = t;
+        }
+    } catch (e) { /* stats endpoint down: the buttons just don't render */ }
+    show();
+}
+
+function hearButton(playlist) {
+    const t = typical[playlist];
+    if (!t) return '';
+    const label = `${t.artist || '?'} — ${t.title || '?'}`;
+    return `<button type="button" onclick="hearPlaylist(${JSON.stringify(playlist).replace(/"/g, '&quot;')})"
+                    title="hear what ${escapeHtml(playlist)} sounds like: ${escapeHtml(label)}"
+                    class="flex-none w-9 rounded-lg border border-gray-700 text-gray-500 hover:text-indigo-200 hover:bg-indigo-600 hover:border-indigo-500 transition-colors text-sm">🎧</button>`;
+}
+
+function hearPlaylist(playlist) {
+    const t = typical[playlist];
+    if (!t) return;
+    const main = document.getElementById('player');
+    if (main && !main.paused) main.pause();
+    const p = document.getElementById('playlist-player');
+    const note = document.getElementById('playlist-note');
+    if (p.dataset.playlist === playlist && !p.paused) { p.pause(); return; }
+    p.src = `/api/sort/preview/${t.videoId}`;
+    p.dataset.playlist = playlist;
+    note.innerHTML = `<span class="text-gray-400">${escapeHtml(playlist)}</span> sounds like
+        <span class="text-gray-300">${escapeHtml(t.artist || '?')} — ${escapeHtml(t.title || '?')}</span>`;
+    note.parentElement.classList.remove('hidden');
+    p.play().catch(() => {});
+}
+
+load().then(loadTypical);
 </script>
 </body>
 </html>
