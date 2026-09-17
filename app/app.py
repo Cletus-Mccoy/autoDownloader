@@ -49,6 +49,9 @@ VIBE_DIR         = f"{DATA_DIR}/vibe"
 SORT_QUEUE_FILE  = f"{VIBE_DIR}/sort_queue.json"
 VIBE_LIBRARY_FILE = f"{VIBE_DIR}/library.json"
 DECISIONS_FILE   = f"{VIBE_DIR}/reports/decisions.jsonl"
+REMODEL_REVIEW_FILE    = f"{VIBE_DIR}/reports/remodel_review.csv"
+REMODEL_DECISIONS_FILE = f"{VIBE_DIR}/remodel_decisions.json"
+MOVES_LEDGER_FILE      = f"{VIBE_DIR}/reports/moves.jsonl"
 MUSIC_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aac", ".wma"}
 UNSUPPORTED_TITLES = {"Liked Music", "Episodes for Later"}
 
@@ -790,6 +793,11 @@ def sort_queue():
     })
 
 
+@app.route("/sort/misfiled")
+def sort_misfiled_page():
+    return render_template("sort_misfiled.html")
+
+
 @app.route("/sort/stats")
 def sort_stats_page():
     return render_template("sort_stats.html")
@@ -910,6 +918,8 @@ def sort_stats():
             "auto": counts["auto"],
             "manual": counts["manual"],
             "skipped": counts["skipped"],
+            "moved": counts.get("remodel", 0),
+            "kept": counts.get("remodel_keep", 0),
             "placed": placed,
             "automation_rate": (counts["auto"] / placed) if placed else None,
         },
@@ -979,6 +989,127 @@ def sort_skip():
         return jsonify({"error": "videoId is required"}), 400
     _drop_from_queue(video_id)
     _log_decision({"kind": "skipped", "videoId": video_id})
+    return jsonify({"ok": True})
+
+
+# ── Misfiled tracks: the remodel proposals, reviewed one at a time ──────────
+#
+# /sort handles likes that are in no playlist. This handles the opposite: a
+# track that is filed, but whose playlist the model scores badly while another
+# scores well. The nightly `vibe_remodel.py plan` writes the proposals; here
+# they are served minus the ones already decided, and a decision either moves
+# the track (add to target, then remove from source) or keeps it, which hides
+# it while it stays in that playlist.
+
+def _remodel_rows():
+    import csv
+    if not os.path.exists(REMODEL_REVIEW_FILE):
+        return []
+    with open(REMODEL_REVIEW_FILE, newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def _remodel_decisions():
+    return _read_json(REMODEL_DECISIONS_FILE, {})
+
+
+def _record_remodel_decision(video_id, **fields):
+    decisions = _remodel_decisions()
+    decisions[video_id] = {**fields,
+                           "at": datetime.datetime.utcnow().isoformat()}
+    os.makedirs(VIBE_DIR, exist_ok=True)
+    tmp = REMODEL_DECISIONS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(decisions, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, REMODEL_DECISIONS_FILE)
+
+
+@app.route("/api/sort/remodel")
+def sort_remodel():
+    decided = _remodel_decisions()
+    audio_dir = os.path.join(VIBE_DIR, "audio")
+    tracks = []
+    for row in _remodel_rows():
+        video_id, current = row.get("videoId"), row.get("current")
+        # A kept track stays hidden while it sits in that playlist; a moved
+        # one reappears only if the next plan flags it in its new home.
+        if decided.get(video_id, {}).get("from") == current:
+            continue
+        tracks.append({
+            "videoId": video_id,
+            "artist": row.get("artist"),
+            "title": row.get("title"),
+            "current": current,
+            "p_current": float(row.get("p_current") or 0),
+            "suggested": row.get("suggested"),
+            "p_suggested": float(row.get("p_suggested") or 0),
+            "runner_up": row.get("runner_up") or None,
+            "p_runner_up": float(row.get("p_runner_up") or 0),
+            "has_preview": any(os.path.exists(os.path.join(audio_dir, f"{video_id}.{ext}"))
+                               for ext in ("m4a", "wav")),
+        })
+    generated_at = None
+    if os.path.exists(REMODEL_REVIEW_FILE):
+        generated_at = datetime.datetime.utcfromtimestamp(
+            os.path.getmtime(REMODEL_REVIEW_FILE)).isoformat()
+    return jsonify({"generated_at": generated_at, "tracks": tracks,
+                    "playlists": sorted(_playlist_ids().keys())})
+
+
+@app.route("/api/sort/remodel/move", methods=["POST"])
+def sort_remodel_move():
+    body = request.json or {}
+    video_id, current, target = (body.get("videoId"), body.get("current"),
+                                 body.get("target"))
+    if not video_id or not current or not target:
+        return jsonify({"error": "videoId, current and target are required"}), 400
+    if target == current:
+        return jsonify({"error": "target is the current playlist"}), 400
+    if target not in _playlist_ids():
+        return jsonify({"error": f"unknown playlist {target!r}"}), 400
+
+    lib = _read_json(VIBE_LIBRARY_FILE, None)
+    if not lib:
+        return jsonify({"error": "no cached library"}), 500
+    try:
+        from scripts.ytmusic_auth import headers_to_ytmusic
+        from scripts.vibe.moves import move_track, relocate_in_library
+        move_track(headers_to_ytmusic(), lib, video_id, current, target)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    # Mirror the move in the cached library so the same track can't be moved
+    # from a playlist it has just left, and the stats stay consistent.
+    relocate_in_library(lib, video_id, current, target)
+    tmp = VIBE_LIBRARY_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(lib, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, VIBE_LIBRARY_FILE)
+
+    record = {"videoId": video_id, "artist": body.get("artist"),
+              "title": body.get("title"), "current": current, "target": target}
+    os.makedirs(os.path.dirname(MOVES_LEDGER_FILE), exist_ok=True)
+    with open(MOVES_LEDGER_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps({**record, "source": "ui",
+                            "moved_at": datetime.datetime.utcnow().isoformat()},
+                           ensure_ascii=False) + "\n")
+    _record_remodel_decision(video_id, action="move", **{"from": current},
+                             to=target)
+    _log_decision({"kind": "remodel", "videoId": video_id, "playlist": target,
+                   "from": current, "title": body.get("title"),
+                   "artist": body.get("artist")})
+    return jsonify({"ok": True})
+
+
+@app.route("/api/sort/remodel/keep", methods=["POST"])
+def sort_remodel_keep():
+    body = request.json or {}
+    video_id, current = body.get("videoId"), body.get("current")
+    if not video_id or not current:
+        return jsonify({"error": "videoId and current are required"}), 400
+    _record_remodel_decision(video_id, action="keep", **{"from": current})
+    _log_decision({"kind": "remodel_keep", "videoId": video_id,
+                   "playlist": current})
     return jsonify({"ok": True})
 
 

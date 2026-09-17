@@ -88,6 +88,10 @@ def run_downloader():
                   [sys.executable, "/app/scripts/vibe_route.py", "--execute",
                    "--no-refresh-library",
                    "--max-new-audio", SORTER_MAX_NEW_AUDIO], f)
+            # Proposals for tracks already filed somewhere the model
+            # disagrees with. Nothing moves here; the review page does that.
+            _step("Finding misfiled tracks",
+                  [sys.executable, "/app/scripts/vibe_remodel.py", "plan"], f)
 
         ok = _step("Downloading playlists",
                    [sys.executable, "/app/scripts/download.py"], f)

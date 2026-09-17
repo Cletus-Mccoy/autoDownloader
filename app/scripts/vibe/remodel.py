@@ -40,6 +40,7 @@ import numpy as np
 from ytmusic_auth import headers_to_ytmusic
 
 from . import config, library, model, sweep
+from .moves import move_track
 
 REVIEW_FILE = "remodel_review.csv"
 LEDGER_FILE = "moves.jsonl"
@@ -152,30 +153,13 @@ def execute(moves, lib, ledger_path):
     ytmusic = headers_to_ytmusic()
     library.check_auth(ytmusic)
 
-    ids = {p["title"]: p["id"] for p in lib["playlists"]}
-    set_ids = {}
-    for pl in lib["playlists"]:
-        for track in pl["tracks"]:
-            set_ids[(pl["title"], track["videoId"])] = track.get("setVideoId")
-
     done = failed = 0
     with open(ledger_path, "a", encoding="utf-8") as ledger:
         for move in moves:
             target, source = move["target"], move["current"]
             video_id = move["videoId"]
-            target_id, source_id = ids.get(target), ids.get(source)
-            set_video_id = set_ids.get((source, video_id))
-
-            if not target_id or not source_id or not set_video_id:
-                print(f"  ✗ {move['title']}: missing ids, skipped")
-                failed += 1
-                continue
             try:
-                ytmusic.add_playlist_items(target_id, [video_id],
-                                           duplicates=False)
-                ytmusic.remove_playlist_items(
-                    source_id, [{"videoId": video_id,
-                                 "setVideoId": set_video_id}])
+                move_track(ytmusic, lib, video_id, source, target)
             except Exception as e:
                 print(f"  ✗ {move['title']}: {e}")
                 failed += 1
