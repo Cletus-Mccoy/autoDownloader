@@ -80,7 +80,9 @@ def _prepare_cookies():
         print("⚠ No auth cookies found — snippet downloads will likely fail. "
               "Authenticate via the web UI first.")
         return None
-    return write_cookies_file(cookie, config.COOKIES_FILE)
+    # The downloader's jar, not a second one: two jars for one session drift
+    # apart as yt-dlp rotates tokens in whichever it used last.
+    return write_cookies_file(cookie)
 
 
 def fetch_one(track, cookies_path=None):
