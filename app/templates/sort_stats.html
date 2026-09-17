@@ -28,6 +28,12 @@
 </div>
 
 <script>
+// Embedded in the downloader's tool modal: the modal carries the title and
+// close button, so the page header only duplicates them.
+if (new URLSearchParams(location.search).has('embed')) {
+    document.querySelector('.flex.items-center.justify-between.mb-6')?.classList.add('hidden');
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') parent.postMessage('tool-modal-close', '*'); });
+}
 function pct(x, digits = 0) {
     return (x === null || x === undefined) ? '—' : (x * 100).toFixed(digits) + '%';
 }

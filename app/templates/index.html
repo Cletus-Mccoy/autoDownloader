@@ -86,14 +86,37 @@
                 </svg>
                 <span class="flex-1 text-center">Playlists</span>
             </button>
-            <a id="sort-btn" href="/sort"
+            <button type="button" onclick="openToolModal('/sort', 'Sort new likes')"
                 class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2">
                 <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4"/>
                 </svg>
-                <span class="flex-1 text-center">Sort liked</span>
+                <span class="flex-1 text-center">New likes</span>
                 <span id="sort-queue-count" class="text-gray-600 text-xs flex-shrink-0"></span>
-            </a>
+            </button>
+            <button type="button" onclick="openToolModal('/sort/misfiled', 'Misfiled tracks')"
+                class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4M16 17H4m0 0l4 4m-4-4l4-4"/>
+                </svg>
+                <span class="flex-1 text-center">Misfiled</span>
+                <span id="misfiled-count" class="text-gray-600 text-xs flex-shrink-0"></span>
+            </button>
+            <button type="button" onclick="openToolModal('/sort/duplicates', 'Duplicates')"
+                class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+                <span class="flex-1 text-center">Duplicates</span>
+                <span id="dupes-count" class="text-gray-600 text-xs flex-shrink-0"></span>
+            </button>
+            <button type="button" onclick="openToolModal('/sort/stats', 'Sorter stats')"
+                class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2">
+                <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                </svg>
+                <span class="flex-1 text-center">Stats</span>
+            </button>
             <button id="global-refresh-btn" type="button" onclick="toggleGlobalRefresh()"
                 class="w-full px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-medium transition-colors text-gray-300 flex items-center gap-2">
                 <svg class="w-3.5 h-3.5 flex-shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
@@ -300,6 +323,23 @@
 </div>
 
 <!-- AUTH MODAL -->
+<div id="tool-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center hidden z-50" onclick="if (event.target === this) closeToolModal()">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-3xl shadow-2xl mx-4 flex flex-col" style="height: 88vh">
+        <div class="flex justify-between items-center px-5 py-3 border-b border-gray-800">
+            <h2 id="tool-modal-title" class="text-base font-bold text-white"></h2>
+            <div class="flex items-center gap-2">
+                <a id="tool-modal-open" href="/sort" target="_blank" title="open as a page"
+                   class="text-gray-500 hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-800">↗</a>
+                <button onclick="closeToolModal()"
+                    class="text-gray-500 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-800">
+                    &times;
+                </button>
+            </div>
+        </div>
+        <iframe id="tool-frame" title="sorter tool" class="flex-1 w-full rounded-b-2xl bg-gray-950" src="about:blank"></iframe>
+    </div>
+</div>
+
 <div id="auth-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center hidden z-50">
     <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl mx-4 overflow-y-auto" style="max-height:90vh">
         <div class="flex justify-between items-center mb-5">
@@ -633,6 +673,33 @@
         });
     }
     updateAuthUI();
+
+    // Sorter tools live on their own pages (queues, players, key handlers);
+    // the modal hosts them in a frame with ?embed=1 so they drop their header.
+    function openToolModal(path, title) {
+        document.getElementById('tool-modal-title').textContent = title;
+        document.getElementById('tool-modal-open').href = path;
+        const frame = document.getElementById('tool-frame');
+        frame.src = path + (path.includes('?') ? '&' : '?') + 'embed=1';
+        document.getElementById('tool-modal').classList.remove('hidden');
+        frame.onload = () => { try { frame.contentWindow.focus(); } catch (e) {} };
+    }
+    function closeToolModal() {
+        document.getElementById('tool-modal').classList.add('hidden');
+        document.getElementById('tool-frame').src = 'about:blank';
+        refreshToolCounts();
+    }
+    async function refreshToolCounts() {
+        const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = n ? String(n) : ''; };
+        try { const d = await (await fetch('/api/sort/queue')).json(); set('sort-queue-count', (d.tracks || []).length); } catch (e) {}
+        try { const d = await (await fetch('/api/sort/remodel')).json(); set('misfiled-count', (d.tracks || []).length); } catch (e) {}
+        try { const d = await (await fetch('/api/sort/duplicates')).json(); set('dupes-count', (d.groups || []).length + (d.tier_a_extra ? 1 : 0)); } catch (e) {}
+    }
+    window.addEventListener('message', e => { if (e.data === 'tool-modal-close') closeToolModal(); });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && !document.getElementById('tool-modal').classList.contains('hidden')) closeToolModal();
+    });
+    refreshToolCounts();
 
     function openAuthModal()  { document.getElementById('auth-modal').classList.remove('hidden'); }
     function closeAuthModal() {
