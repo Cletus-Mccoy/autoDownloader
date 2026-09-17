@@ -228,7 +228,74 @@ async function load() {
         </div>`;
     }
 
+    html += `
+        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mt-6">
+            <div class="flex items-center justify-between mb-1">
+                <div class="text-[11px] uppercase tracking-wide text-gray-500">What each playlist sounds like</div>
+                <audio id="typical-player" controls preload="none" class="h-8"></audio>
+            </div>
+            <div class="text-[11px] text-gray-600 mb-3 leading-relaxed">
+                The tracks closest to each playlist's centre in embedding space, and the
+                ones furthest from it. Cohesion is the average similarity to that centre:
+                low numbers mean a playlist the model hears as several things.
+            </div>
+            <div id="typical" class="text-xs text-gray-500">Loading…</div>
+        </div>`;
+
     document.getElementById('body').innerHTML = html;
+    loadTypical();
+}
+
+function playSnippet(videoId, label) {
+    const player = document.getElementById('typical-player');
+    if (!player) return;
+    player.src = `/api/sort/preview/${videoId}`;
+    player.title = label;
+    player.play();
+}
+
+function trackRow(t, tone) {
+    const label = `${t.artist || '?'} — ${t.title || '?'}`;
+    const play = t.has_preview
+        ? `<button onclick="playSnippet('${esc(t.videoId)}', '${esc(label).replace(/'/g, '&#39;')}')"
+                   class="w-6 h-6 rounded bg-gray-800 hover:bg-indigo-600 text-gray-300 text-[10px] flex-none"
+                   title="play 60s snippet">▶</button>`
+        : `<a href="https://music.youtube.com/watch?v=${esc(t.videoId)}" target="_blank"
+              class="w-6 h-6 rounded bg-gray-800 text-gray-500 text-[10px] flex items-center justify-center flex-none"
+              title="no cached snippet — open on YouTube Music">↗</a>`;
+    return `<div class="flex items-center gap-2 py-0.5">
+        ${play}
+        <span class="truncate ${tone}" title="${esc(label)}">${esc(label)}</span>
+        <span class="ml-auto tabular-nums text-gray-600 flex-none">${t.similarity.toFixed(2)}</span>
+    </div>`;
+}
+
+async function loadTypical() {
+    const el = document.getElementById('typical');
+    let d;
+    try { d = await (await fetch('/api/sort/typical')).json(); }
+    catch (e) { el.textContent = 'Could not load.'; return; }
+    const names = Object.keys(d.playlists || {}).sort();
+    if (!names.length) { el.textContent = 'Nothing embedded yet.'; return; }
+    el.innerHTML = names.map(name => {
+        const p = d.playlists[name];
+        return `<div class="border-t border-gray-800 py-3 first:border-t-0">
+            <div class="flex items-center justify-between mb-1">
+                <span class="text-gray-200 font-medium">${esc(name)}</span>
+                <span class="text-[11px] text-gray-600 tabular-nums">${p.count} tracks · cohesion ${p.cohesion.toFixed(2)}</span>
+            </div>
+            <div class="grid md:grid-cols-2 gap-x-6">
+                <div>
+                    <div class="text-[10px] uppercase tracking-wide text-gray-600 mb-1">most typical</div>
+                    ${p.typical.map(t => trackRow(t, 'text-gray-300')).join('')}
+                </div>
+                <div>
+                    <div class="text-[10px] uppercase tracking-wide text-gray-600 mb-1">least typical</div>
+                    ${p.atypical.map(t => trackRow(t, 'text-gray-500')).join('')}
+                </div>
+            </div>
+        </div>`;
+    }).join('');
 }
 
 load();

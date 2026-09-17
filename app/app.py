@@ -930,6 +930,43 @@ def sort_stats():
     })
 
 
+_typical_cache = {"key": None, "value": None}
+
+
+@app.route("/api/sort/typical")
+def sort_typical():
+    """The most and least typical tracks per playlist, by embedding.
+
+    Cached on the (library, embeddings) mtimes: the vectors only change when
+    the nightly run embeds something, and the page is opened far more often
+    than that.
+    """
+    meta = _read_json(f"{VIBE_DIR}/thresholds.json", {})
+    backend = meta.get("backend") or "effnet"
+    npz = os.path.join(VIBE_DIR, "embeddings", f"{backend}.npz")
+    if not os.path.exists(npz) or not os.path.exists(VIBE_LIBRARY_FILE):
+        return jsonify({"backend": backend, "playlists": {}})
+
+    key = (os.path.getmtime(npz), os.path.getmtime(VIBE_LIBRARY_FILE),
+           tuple(_sorter_excludes()))
+    if _typical_cache["key"] != key:
+        import numpy as np
+        from scripts.vibe.typical import typical_tracks
+        lib = _read_json(VIBE_LIBRARY_FILE, {})
+        with np.load(npz) as data:
+            vectors = {k: data[k] for k in data.files}
+        result = typical_tracks(lib, vectors, exclude=_sorter_excludes())
+        audio_dir = os.path.join(VIBE_DIR, "audio")
+        for info in result.values():
+            for track in info["typical"] + info["atypical"]:
+                track["has_preview"] = any(
+                    os.path.exists(os.path.join(audio_dir, f"{track['videoId']}.{ext}"))
+                    for ext in ("m4a", "wav"))
+        _typical_cache.update(key=key, value=result)
+
+    return jsonify({"backend": backend, "playlists": _typical_cache["value"]})
+
+
 @app.route("/api/sort/preview/<video_id>")
 def sort_preview(video_id):
     """Serve the cached 60s snippet as the preview.
