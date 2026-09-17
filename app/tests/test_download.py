@@ -150,3 +150,17 @@ def test_main_tolerates_empty_library_without_cookies(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout="2026.07.04"))
 
     dl.main()  # no SystemExit
+
+
+def test_scheduler_steps_use_own_interpreter(monkeypatch, tmp_path):
+    """cron's PATH resolves python3 to Debian's bare interpreter; every step
+    must run with the interpreter the scheduler itself runs under."""
+    import sys, subprocess
+    import scheduler
+    monkeypatch.setattr(scheduler, "LOG_DIR", str(tmp_path))
+    monkeypatch.setattr(scheduler, "RUNS_FILE", str(tmp_path / "runs.json"))
+    seen = []
+    monkeypatch.setattr(subprocess, "run",
+                        lambda argv, **k: seen.append(argv) or subprocess.CompletedProcess(argv, 0))
+    scheduler.run_downloader()
+    assert seen and all(argv[0] == sys.executable for argv in seen)
