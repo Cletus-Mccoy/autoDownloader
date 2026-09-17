@@ -11,6 +11,15 @@ from croniter import croniter
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3
 from mutagen._file import File as MutagenFile
+# The vibe modules import their siblings as top-level modules (library.py
+# does `from ytmusic_auth import ...`), which is how the CLI entry points run
+# them. The web app must offer the same import path, or the first endpoint to
+# touch library.py fails with ModuleNotFoundError — as /api/sort/duplicates
+# did in production while passing every test (conftest adds the path).
+_SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+
 from scripts.timer import get_next_run_safe
 from scripts.runner import run_scheduler_stream
 from scripts.scheduler import log_run as _cron_log_run
