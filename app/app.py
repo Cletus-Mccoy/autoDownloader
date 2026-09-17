@@ -52,6 +52,8 @@ DECISIONS_FILE   = f"{VIBE_DIR}/reports/decisions.jsonl"
 REMODEL_REVIEW_FILE    = f"{VIBE_DIR}/reports/remodel_review.csv"
 REMODEL_DECISIONS_FILE = f"{VIBE_DIR}/remodel_decisions.json"
 MOVES_LEDGER_FILE      = f"{VIBE_DIR}/reports/moves.jsonl"
+DUPES_DECISIONS_FILE   = f"{VIBE_DIR}/dupes_decisions.json"
+REMOVALS_LEDGER_FILE   = f"{VIBE_DIR}/reports/removals.jsonl"
 MUSIC_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aac", ".wma"}
 UNSUPPORTED_TITLES = {"Liked Music", "Episodes for Later"}
 
@@ -811,6 +813,11 @@ def sort_misfiled_page():
     return render_template("sort_misfiled.html")
 
 
+@app.route("/sort/duplicates")
+def sort_duplicates_page():
+    return render_template("sort_duplicates.html")
+
+
 @app.route("/sort/stats")
 def sort_stats_page():
     return render_template("sort_stats.html")
@@ -933,6 +940,7 @@ def sort_stats():
             "skipped": counts["skipped"],
             "moved": counts.get("remodel", 0),
             "kept": counts.get("remodel_keep", 0),
+            "deduped": counts.get("dedupe", 0),
             "placed": placed,
             "automation_rate": (counts["auto"] / placed) if placed else None,
         },
@@ -1160,6 +1168,176 @@ def sort_remodel_keep():
     _record_remodel_decision(video_id, action="keep", **{"from": current})
     _log_decision({"kind": "remodel_keep", "videoId": video_id,
                    "playlist": current})
+    return jsonify({"ok": True})
+
+
+# ── Duplicates: same track twice in a playlist (A), in several playlists (B),
+# or the same song under different uploads (C). Computed from the cached
+# library on request — no model involved — and resolved one group at a time.
+
+def _has_preview(video_id):
+    audio_dir = os.path.join(VIBE_DIR, "audio")
+    return any(os.path.exists(os.path.join(audio_dir, f"{video_id}.{ext}"))
+               for ext in ("m4a", "wav"))
+
+
+def _dupes():
+    from scripts.vibe.dedupe import find_duplicates
+    lib = _read_json(VIBE_LIBRARY_FILE, None) or {"playlists": []}
+    return lib, find_duplicates(lib, _sorter_excludes())
+
+
+def _dupes_decisions():
+    return _read_json(DUPES_DECISIONS_FILE, {})
+
+
+def _record_dupes_decision(key, **fields):
+    decisions = _dupes_decisions()
+    decisions[key] = {**fields, "at": datetime.datetime.utcnow().isoformat()}
+    os.makedirs(VIBE_DIR, exist_ok=True)
+    tmp = DUPES_DECISIONS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(decisions, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, DUPES_DECISIONS_FILE)
+
+
+def _save_library(lib):
+    tmp = VIBE_LIBRARY_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(lib, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, VIBE_LIBRARY_FILE)
+
+
+def _ledger_removals(removals, reason):
+    os.makedirs(os.path.dirname(REMOVALS_LEDGER_FILE), exist_ok=True)
+    stamp = datetime.datetime.utcnow().isoformat()
+    with open(REMOVALS_LEDGER_FILE, "a", encoding="utf-8") as f:
+        for r in removals:
+            f.write(json.dumps({**r, "reason": reason, "source": "ui",
+                                "removed_at": stamp}, ensure_ascii=False) + "\n")
+
+
+@app.route("/api/sort/duplicates")
+def sort_duplicates():
+    lib, dupes = _dupes()
+    decided = _dupes_decisions()
+
+    tier_a = [{"playlist": w["playlist"], "videoId": w["videoId"],
+               "artist": w["track"].get("artist"), "title": w["track"].get("title"),
+               "extra": w["count"] - 1}
+              for w in dupes["within"]]
+
+    groups = []
+    for entry in dupes["across"]:
+        key = f"B:{entry['videoId']}"
+        if key in decided:
+            continue
+        track = entry["track"]
+        groups.append({
+            "key": key, "tier": "B", "videoId": entry["videoId"],
+            "artist": track.get("artist"), "title": track.get("title"),
+            "has_preview": _has_preview(entry["videoId"]),
+            "options": [{"value": p, "label": p} for p in entry["playlists"]],
+            "note": "in several playlists — keep it in which one?",
+        })
+    for group in dupes["reuploads"]:
+        ids = sorted(group["copies"])
+        key = "C:" + ",".join(ids)
+        if key in decided:
+            continue
+        copies = group["copies"]
+        all_playlists = {p for info in copies.values() for p in info["playlists"]}
+        first = copies[ids[0]]["track"]
+        groups.append({
+            "key": key, "tier": "C", "videoId": ids[0],
+            "artist": first.get("artist"), "title": first.get("title"),
+            "has_preview": _has_preview(ids[0]),
+            "options": [{"value": vid,
+                         "label": f"{copies[vid]['track'].get('artist') or '?'} — "
+                                  f"{copies[vid]['track'].get('title') or '?'}",
+                         "playlists": copies[vid]["playlists"],
+                         "videoId": vid, "has_preview": _has_preview(vid)}
+                        for vid in ids],
+            "note": ("same song uploaded twice in one playlist" if len(all_playlists) == 1
+                     else "copies live in different playlists — the loser leaves its playlist entirely"),
+        })
+    groups.sort(key=lambda g: (g["tier"], (g["artist"] or "").lower(), (g["title"] or "").lower()))
+    return jsonify({"tier_a": tier_a, "tier_a_extra": sum(t["extra"] for t in tier_a),
+                    "groups": groups, "playlists": dupes["playlists"]})
+
+
+@app.route("/api/sort/duplicates/resolve", methods=["POST"])
+def sort_duplicates_resolve():
+    body = request.json or {}
+    key, keep = body.get("key"), body.get("keep")
+    if not key:
+        return jsonify({"error": "key is required"}), 400
+    lib, dupes = _dupes()
+    placements = dupes["placements"]
+    removals, reason = [], ""
+
+    if key == "A":
+        for w in dupes["within"]:
+            for extra in w["entries"][1:]:
+                removals.append({"tier": "A", "playlist": w["playlist"],
+                                 "videoId": w["videoId"],
+                                 "setVideoId": extra.get("setVideoId"),
+                                 "label": f"{w['track'].get('artist')} — {w['track'].get('title')}"})
+        reason = "listed twice in this playlist"
+    elif key.startswith("B:"):
+        video_id = key[2:]
+        titles = sorted({t for t, _ in placements.get(video_id, [])})
+        if keep not in titles:
+            return jsonify({"error": f"keep must be one of {titles}"}), 400
+        for title, track in placements.get(video_id, []):
+            if title != keep:
+                removals.append({"tier": "B", "playlist": title, "videoId": video_id,
+                                 "setVideoId": track.get("setVideoId"),
+                                 "label": f"{track.get('artist')} — {track.get('title')}"})
+        reason = f"kept in {keep}"
+    elif key.startswith("C:"):
+        ids = key[2:].split(",")
+        if keep not in ids:
+            return jsonify({"error": "keep must be one of the copies"}), 400
+        for video_id in ids:
+            if video_id == keep:
+                continue
+            for title, track in placements.get(video_id, []):
+                removals.append({"tier": "C", "playlist": title, "videoId": video_id,
+                                 "setVideoId": track.get("setVideoId"),
+                                 "label": f"{track.get('artist')} — {track.get('title')}"})
+        reason = f"kept copy {keep}"
+    else:
+        return jsonify({"error": "unknown key"}), 400
+
+    if not removals:
+        if key != "A":
+            _record_dupes_decision(key, action="keep", keep=keep)
+        return jsonify({"ok": True, "removed": 0})
+
+    try:
+        from scripts.ytmusic_auth import headers_to_ytmusic
+        from scripts.vibe.removals import remove_placements
+        done, failed, errors = remove_placements(headers_to_ytmusic(), lib, removals)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    if done:
+        _save_library(lib)
+        _ledger_removals([r for r in removals], reason)
+        _log_decision({"kind": "dedupe", "tier": key[0], "removed": done, "keep": keep})
+    if failed:
+        return jsonify({"error": "; ".join(errors), "removed": done}), 500
+    if key != "A":
+        _record_dupes_decision(key, action="resolve", keep=keep, removed=done)
+    return jsonify({"ok": True, "removed": done})
+
+
+@app.route("/api/sort/duplicates/skip", methods=["POST"])
+def sort_duplicates_skip():
+    key = (request.json or {}).get("key")
+    if not key or key == "A":
+        return jsonify({"error": "key is required"}), 400
+    _record_dupes_decision(key, action="skip")
     return jsonify({"ok": True})
 
 

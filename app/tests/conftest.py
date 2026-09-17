@@ -55,6 +55,8 @@ def flask_app(data_dir, monkeypatch, tmp_path):
     monkeypatch.setattr(flask_module, "REMODEL_REVIEW_FILE",    str(vibe_dir / "reports" / "remodel_review.csv"))
     monkeypatch.setattr(flask_module, "REMODEL_DECISIONS_FILE", str(vibe_dir / "remodel_decisions.json"))
     monkeypatch.setattr(flask_module, "MOVES_LEDGER_FILE",      str(vibe_dir / "reports" / "moves.jsonl"))
+    monkeypatch.setattr(flask_module, "DUPES_DECISIONS_FILE",   str(vibe_dir / "dupes_decisions.json"))
+    monkeypatch.setattr(flask_module, "REMOVALS_LEDGER_FILE",   str(vibe_dir / "reports" / "removals.jsonl"))
     flask_module._typical_cache.update(key=None, value=None)
 
     # Also patch ytmusic_auth's constants — the /auth/status route imports
