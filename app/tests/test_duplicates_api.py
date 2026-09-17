@@ -101,3 +101,17 @@ def test_duplicates_page_and_nav(client):
     assert client.get("/sort/duplicates").status_code == 200
     for path in ("/sort", "/sort/misfiled", "/sort/stats"):
         assert 'href="/sort/duplicates"' in client.get(path).get_data(as_text=True)
+
+
+def test_duplicates_endpoint_works_without_scripts_on_path(client, dupes_env, monkeypatch):
+    """Production never had scripts/ on sys.path; the app must add it itself.
+    Strip it (and cached vibe modules) and hit the endpoint cold."""
+    import sys
+    scripts_dir = dupes_env._SCRIPTS_DIR
+    monkeypatch.setattr(sys, "path", [p for p in sys.path if p != scripts_dir])
+    for name in [m for m in sys.modules if m.startswith("scripts.vibe") or m == "ytmusic_auth"]:
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    import app as flask_module
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)   # what the app's import block does at startup
+    assert client.get("/api/sort/duplicates").status_code == 200
