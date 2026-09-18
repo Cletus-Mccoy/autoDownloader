@@ -7,6 +7,7 @@ import sys
 import json
 import time
 import subprocess
+import shutil
 from pathlib import Path
 from dotenv import load_dotenv
 import ytmusic_auth
@@ -22,6 +23,22 @@ AUDIO_CODEC = os.getenv("YT_DLP_CODEC", "mp3")
 NORMALIZE_AUDIO = os.getenv("YT_DLP_NORMALIZE", "false").lower() == "true"
 
 UNSUPPORTED_TITLES = {"Liked Music", "Episodes for Later"}
+
+
+def yt_dlp_binary():
+    """The yt-dlp installed next to this interpreter, then PATH.
+
+    Under cron PATH is /usr/bin:/bin and /usr/local/bin/yt-dlp is invisible:
+    the 2026-09-18 03:00 run trained and sorted, then printed "yt-dlp not
+    found" and downloaded nothing. The snippet fetcher already resolved it
+    this way; the downloader now does the same.
+    """
+    scripts_dir = os.path.dirname(sys.executable)
+    for name in ("yt-dlp", "yt-dlp.exe"):
+        candidate = os.path.join(scripts_dir, name)
+        if os.path.exists(candidate):
+            return candidate
+    return shutil.which("yt-dlp") or "yt-dlp"
 
 
 def get_cookie_header():
@@ -143,7 +160,7 @@ def download_playlist(playlist):
     cookies_path = write_cookies_file(cookie) if cookie else None
 
     cmd = [
-        "yt-dlp",
+        yt_dlp_binary(),
         "-f", "bestaudio/best",
         "-x", "--extract-audio",
         "--audio-format", AUDIO_CODEC,
@@ -195,7 +212,7 @@ def main():
     print("=" * 60)
 
     try:
-        result = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True, check=True)
+        result = subprocess.run([yt_dlp_binary(), "--version"], capture_output=True, text=True, check=True)
         print(f"✓ yt-dlp: {result.stdout.strip()}")
     except Exception:
         print("✗ yt-dlp not found")
