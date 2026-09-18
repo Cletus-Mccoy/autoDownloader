@@ -164,3 +164,23 @@ def test_scheduler_steps_use_own_interpreter(monkeypatch, tmp_path):
                         lambda argv, **k: seen.append(argv) or subprocess.CompletedProcess(argv, 0))
     scheduler.run_downloader()
     assert seen and all(argv[0] == sys.executable for argv in seen)
+
+
+def test_yt_dlp_resolves_next_to_interpreter(tmp_path, monkeypatch):
+    """cron's PATH hides /usr/local/bin; the binary beside sys.executable wins."""
+    import sys, os
+    fake_bin = tmp_path / "bin"; fake_bin.mkdir()
+    (fake_bin / "yt-dlp").write_text("#!/bin/sh\n")
+    monkeypatch.setattr(sys, "executable", str(fake_bin / "python3"))
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    assert dl.yt_dlp_binary() == str(fake_bin / "yt-dlp")
+
+
+def test_download_playlist_invokes_resolved_binary(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(dl, "yt_dlp_binary", lambda: "/opt/venv/bin/yt-dlp")
+    monkeypatch.setattr(dl, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(dl, "get_cookie_header", lambda: None)
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **k: seen.setdefault("cmd", cmd) or subprocess.CompletedProcess(cmd, 0))
+    dl.download_playlist({"title": "T", "url": "https://example.com", "count": 1})
+    assert seen["cmd"][0] == "/opt/venv/bin/yt-dlp"
