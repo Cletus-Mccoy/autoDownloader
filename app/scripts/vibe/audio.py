@@ -8,6 +8,8 @@ Auth reuses the service's existing cookie path (headers_auth.json -> Netscape
 cookies file) rather than introducing a second credential route.
 """
 
+import datetime
+import json
 import os
 import shutil
 import subprocess
@@ -85,6 +87,52 @@ def _prepare_cookies():
     return write_cookies_file(cookie)
 
 
+# Videos YouTube reports as unavailable (removed, private, region-locked) are
+# remembered here with a retry date. Without it every one of them burned a
+# slot of the nightly --max-new-audio cap again the next night, forever: 12 of
+# the 50 slots on 2026-09-18 went to tracks that can never be fetched.
+UNAVAILABLE_FILE = "unavailable.json"
+RETRY_AFTER_DAYS = int(os.getenv("VIBE_UNAVAILABLE_RETRY_DAYS", "30"))
+
+
+def _unavailable_path():
+    return os.path.join(config.DATA_DIR, UNAVAILABLE_FILE)
+
+
+def load_unavailable():
+    try:
+        with open(_unavailable_path(), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def skip_until_retry(tracks):
+    """Split tracks into (worth trying, skipped-as-unavailable)."""
+    now = datetime.datetime.utcnow().isoformat()
+    marks = load_unavailable()
+    go, skipped = [], []
+    for t in tracks:
+        retry = marks.get(t["videoId"], {}).get("retry_after")
+        (skipped if retry and retry > now else go).append(t)
+    return go, skipped
+
+
+def mark_unavailable(video_ids):
+    if not video_ids:
+        return
+    marks = load_unavailable()
+    now = datetime.datetime.utcnow()
+    retry = (now + datetime.timedelta(days=RETRY_AFTER_DAYS)).isoformat()
+    for vid in video_ids:
+        marks[vid] = {"failed_at": now.isoformat(), "retry_after": retry}
+    config.ensure_dirs()
+    tmp = _unavailable_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(marks, f, indent=2)
+    os.replace(tmp, _unavailable_path())
+
+
 def fetch_one(track, cookies_path=None):
     """Download one snippet. Returns the path, or None on failure."""
     video_id = track["videoId"]
@@ -150,6 +198,10 @@ def fetch_many(tracks, workers=3, max_new=None):
     pending = [t for t in tracks if not is_cached(t["videoId"])]
     cached = {t["videoId"]: snippet_path(t["videoId"])
               for t in tracks if is_cached(t["videoId"])}
+    pending, unavailable = skip_until_retry(pending)
+    if unavailable:
+        print(f"  {len(unavailable)} skipped as unavailable (retried after "
+              f"{RETRY_AFTER_DAYS} days)")
 
     deferred = 0
     if max_new is not None and len(pending) > max_new:
@@ -164,6 +216,7 @@ def fetch_many(tracks, workers=3, max_new=None):
 
     results = dict(cached)
     done = 0
+    failed_ids = []
 
     def work(track):
         nonlocal done
@@ -180,6 +233,12 @@ def fetch_many(tracks, workers=3, max_new=None):
             for video_id, path in pool.map(work, pending):
                 if path:
                     results[video_id] = path
+                else:
+                    failed_ids.append(video_id)
+        # A run where nothing at all succeeded is a broken run (dead session,
+        # yt-dlp outdated), not 50 dead videos: don't blacklist on it.
+        if failed_ids and len(failed_ids) < len(pending):
+            mark_unavailable(failed_ids)
 
     failed = len(tracks) - len(results)
     print(f"Audio ready for {len(results)}/{len(tracks)} tracks "
