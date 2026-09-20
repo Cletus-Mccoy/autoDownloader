@@ -130,6 +130,20 @@ def get_selection():
         return []
 
 
+def folder_name(title):
+    """The download folder for a playlist, derived from its title.
+
+    Shared with housekeeping.py: the folder carries that playlist's yt-dlp
+    archive, so if the two ever disagreed about the name, a rename would look
+    like a brand new playlist and re-download everything.
+    """
+    safe_name = "".join(c if c.isalnum() or c in (" ", "-", "_") else "_" for c in title)
+    safe_name = safe_name.strip().replace(" ", "_")
+    while "__" in safe_name:
+        safe_name = safe_name.replace("__", "_")
+    return safe_name.strip("_")
+
+
 def download_playlist(playlist):
     title = playlist["title"]
     url = playlist["url"]
@@ -139,12 +153,7 @@ def download_playlist(playlist):
         print(f"\n⚠ Skipping {title} (not supported by yt-dlp)")
         return True
 
-    safe_name = "".join(c if c.isalnum() or c in (" ", "-", "_") else "_" for c in title)
-    safe_name = safe_name.strip().replace(" ", "_")
-    while "__" in safe_name:
-        safe_name = safe_name.replace("__", "_")
-    safe_name = safe_name.strip("_")
-
+    safe_name = folder_name(title)
     playlist_dir = os.path.join(BASE_DIR, safe_name)
     archive_file = os.path.join(playlist_dir, "downloaded.txt")
 
