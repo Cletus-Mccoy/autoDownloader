@@ -166,3 +166,30 @@ def test_folder_name_matches_the_downloader():
     assert folder_name("72. RNB / CHANSON / SWING / RAGGA") == "72_RNB_CHANSON_SWING_RAGGA"
     assert folder_name("80. Feeling Good! 🙃") == "80_Feeling_Good"
     assert folder_name("82. LO-FI (memories of you)") == "82_LO-FI_memories_of_you"
+
+
+def test_two_copies_of_one_track_do_not_both_relocate(tmp_path, monkeypatch):
+    """Both folders hold the track that now lives in a third: relocate one,
+    call the other spare, or the target ends up with a double."""
+    base = tmp_path / "downloads"
+    layout = {"20_ACID_TECH/twin.mp3": MOVED, "28_UNSORTED_TECH/twin.mp3": MOVED}
+    for rel in layout:
+        _write(str(base / rel))
+    (base / "34_BOUNCE").mkdir(parents=True)
+    monkeypatch.setattr(hk, "BASE_DIR", str(base))
+    monkeypatch.setattr(hk, "QUARANTINE", str(base / ".orphans"))
+    monkeypatch.setattr(
+        hk, "video_id",
+        lambda p: layout.get(os.path.relpath(p, str(base)).replace(os.sep, "/")))
+    library = {"fetched_at": "t", "playlists": [
+        {"title": "20. ACID TECH", "tracks": []},
+        {"title": "28. UNSORTED TECH", "tracks": []},
+        {"title": "34. BOUNCE", "tracks": [{"videoId": MOVED}]},
+    ]}
+
+    report = hk.scan(library, base=str(base), removed_ids=set())
+    assert report["counts"] == {**report["counts"], "relocate": 1, "spare": 1}
+
+    hk.apply(report, base=str(base))
+    assert len(list((base / "34_BOUNCE").glob("*.mp3"))) == 1
+    assert hk.scan(library, base=str(base), removed_ids=set())["counts"]["double"] == 0

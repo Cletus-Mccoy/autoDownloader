@@ -160,6 +160,10 @@ def scan(library, base=BASE_DIR, removed_ids=None):
             homes.setdefault(t["videoId"], []).append(p["title"])
 
     index = index_folders(base)
+    # Two folders can each hold a copy of the same track that now lives in a
+    # third. Only the first is relocated; the rest are spare, or they would
+    # all land in the target and leave a double behind.
+    incoming = {}
     report = {"playlists": [], "ghosts": [], "unreadable": 0, "scanned": 0,
               "relocations": [], "counts": {}}
 
@@ -200,9 +204,12 @@ def scan(library, base=BASE_DIR, removed_ids=None):
                 item["to_title"] = target_title
                 item["to"] = target
                 item["ambiguous"] = len(elsewhere) > 1
-                if vid in index.get(target, {}).get("files", {}):
+                already = (vid in index.get(target, {}).get("files", {})
+                           or vid in incoming.get(target, ()))
+                if already:
                     buckets["spare"].append(item)
                 else:
+                    incoming.setdefault(target, set()).add(vid)
                     buckets["relocate"].append(item)
             elif vid in removed_ids:
                 buckets["removed"].append(item)
