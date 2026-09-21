@@ -50,7 +50,14 @@ VIBE_DIR = os.getenv("VIBE_DATA_DIR", "/app/data/vibe")
 LIBRARY_FILE = os.path.join(VIBE_DIR, "library.json")
 LEDGERS = [os.path.join(VIBE_DIR, "reports", n)
            for n in ("removals.jsonl", "recalls.jsonl", "moves.jsonl")]
-QUARANTINE = os.path.join(BASE_DIR, ".orphans")
+# Outside the music library on purpose: anything under /app/downloads counts
+# towards the downloader's own file count and size, and every media scanner
+# pointed at the library would index it too. The role mounts a sibling
+# directory here; without that mount we fall back to a hidden folder in the
+# library so the tool still works on a plain checkout.
+QUARANTINE_MOUNT = os.getenv("HOUSEKEEPING_QUARANTINE", "/app/orphans")
+QUARANTINE = (QUARANTINE_MOUNT if os.path.isdir(QUARANTINE_MOUNT)
+              else os.path.join(BASE_DIR, ".orphans"))
 AUDIO_EXT = (".mp3", ".m4a", ".opus", ".ogg", ".flac", ".wav")
 ARCHIVE = "downloaded.txt"
 _WATCH = re.compile(r"(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})")
@@ -295,9 +302,10 @@ def _unique(path):
 
 
 def apply(report, base=BASE_DIR, include_unexplained=False,
-          include_ghosts=False, quarantine=None):
-    stamp = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    dest_root = os.path.join(quarantine or QUARANTINE, stamp)
+          include_ghosts=False, quarantine=None, dest_root=None):
+    if dest_root is None:
+        stamp = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        dest_root = os.path.join(quarantine or QUARANTINE, stamp)
     archives = {}          # folder -> list of ids, written once at the end
     ledger = []
     relocated = quarantined = 0
@@ -367,9 +375,39 @@ def apply(report, base=BASE_DIR, include_unexplained=False,
 
     if ledger:
         os.makedirs(dest_root, exist_ok=True)
-        with open(os.path.join(dest_root, "housekeeping.json"), "w",
-                  encoding="utf-8") as f:
-            json.dump(ledger, f, indent=2, ensure_ascii=False)
+        path = os.path.join(dest_root, "housekeeping.json")
+        previous = []
+        if os.path.exists(path):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    previous = json.load(f)
+            except ValueError:
+                previous = []
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(previous + ledger, f, indent=2, ensure_ascii=False)
+    return relocated, quarantined, dest_root
+
+
+def converge(library, passes=3, **kwargs):
+    """Apply until nothing moves.
+
+    Relocating a file changes what the next scan sees, so one pass is not
+    always enough: the first real run left four files behind that a second
+    pass swept. Each pass writes into the same quarantine folder.
+    """
+    stamp = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    base = kwargs.get("base", BASE_DIR)
+    dest_root = os.path.join(kwargs.pop("quarantine", None) or QUARANTINE, stamp)
+    relocated = quarantined = 0
+    for attempt in range(passes):
+        report = scan(library, base=base)
+        moved, swept, _ = apply(report, dest_root=dest_root, **kwargs)
+        relocated += moved
+        quarantined += swept
+        if not moved and not swept:
+            break
+        if attempt:
+            print(f"  pass {attempt + 1}: {moved} relocated, {swept} quarantined")
     return relocated, quarantined, dest_root
 
 
@@ -392,6 +430,9 @@ def main():
     if not library.get("playlists"):
         raise SystemExit("Cached library has no playlists — refresh it first.")
     print(f"Library snapshot: {library.get('fetched_at', '?')}")
+    print(f"Quarantine: {QUARANTINE}"
+          + ("" if QUARANTINE == QUARANTINE_MOUNT
+             else "  (inside the library — the orphans volume is not mounted)"))
 
     report = scan(library)
     print_report(report, args.verbose)
@@ -403,8 +444,8 @@ def main():
         print("\nDRY RUN — nothing moved. Re-run apply with --execute.")
         return
 
-    relocated, quarantined, dest = apply(
-        report, include_unexplained=args.include_unexplained,
+    relocated, quarantined, dest = converge(
+        library, include_unexplained=args.include_unexplained,
         include_ghosts=args.include_ghosts)
     print(f"\nRelocated {relocated} file(s) into the playlist they belong to")
     print(f"Quarantined {quarantined} file(s) under {dest}")

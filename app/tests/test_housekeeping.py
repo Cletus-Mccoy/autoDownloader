@@ -166,3 +166,42 @@ def test_folder_name_matches_the_downloader():
     assert folder_name("72. RNB / CHANSON / SWING / RAGGA") == "72_RNB_CHANSON_SWING_RAGGA"
     assert folder_name("80. Feeling Good! 🙃") == "80_Feeling_Good"
     assert folder_name("82. LO-FI (memories of you)") == "82_LO-FI_memories_of_you"
+
+
+def test_quarantine_prefers_the_mounted_volume(tmp_path, monkeypatch):
+    """Outside the library when the role mounts it, hidden inside when not."""
+    import importlib
+    mounted = tmp_path / "orphans"
+    mounted.mkdir()
+    monkeypatch.setenv("HOUSEKEEPING_QUARANTINE", str(mounted))
+    reloaded = importlib.reload(hk)
+    assert reloaded.QUARANTINE == str(mounted)
+
+    monkeypatch.setenv("HOUSEKEEPING_QUARANTINE", str(tmp_path / "not-mounted"))
+    reloaded = importlib.reload(hk)
+    assert reloaded.QUARANTINE.endswith(os.path.join("downloads", ".orphans"))
+    monkeypatch.delenv("HOUSEKEEPING_QUARANTINE")
+    importlib.reload(hk)
+
+
+def test_converge_keeps_going_until_nothing_moves(downloads, monkeypatch):
+    """Relocating changes what the next scan sees: the first real run left
+    four files that only a second pass caught."""
+    passes = []
+    real_apply = hk.apply
+
+    def counting_apply(report, **kwargs):
+        moved, swept, dest = real_apply(report, **kwargs)
+        passes.append((moved, swept))
+        return moved, swept, dest
+
+    monkeypatch.setattr(hk, "apply", counting_apply)
+    monkeypatch.setattr(hk, "deliberately_removed", lambda: {DEDUPED})
+    relocated, quarantined, dest = hk.converge(
+        _library(), base=str(downloads), quarantine=str(downloads / "q"))
+
+    assert passes[-1] == (0, 0), "must stop only once a pass changes nothing"
+    assert relocated + quarantined == sum(m + s for m, s in passes)
+    # one ledger for the whole run, not one per pass
+    assert os.path.exists(os.path.join(dest, "housekeeping.json"))
+    assert len(os.listdir(os.path.dirname(dest))) == 1

@@ -134,7 +134,10 @@ def _is_music(filename):
 
 def get_files():
     result = []
-    for root, _, files in os.walk(DOWNLOAD_DIR):
+    for root, dirs, files in os.walk(DOWNLOAD_DIR):
+        # Hidden directories are bookkeeping (quarantined orphans, archives),
+        # not part of the library, and must not inflate the count or size.
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
         for f in files:
             if _is_music(f):
                 result.append(os.path.join(root, f).replace(DOWNLOAD_DIR.rstrip("/") + "/", ""))
@@ -143,7 +146,8 @@ def get_files():
 
 def get_download_size():
     total = 0
-    for root, _, files in os.walk(DOWNLOAD_DIR):
+    for root, dirs, files in os.walk(DOWNLOAD_DIR):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
         for f in files:
             if not _is_music(f):
                 continue
