@@ -33,9 +33,12 @@ import numpy as np
 from ytmusic_auth import headers_to_ytmusic
 
 from . import audio, config, embed, library
+from .removals import dedupe_blocks
 
 QUEUE_FILE = "sort_queue.json"
 DECISIONS_FILE = "decisions.jsonl"
+REMOVALS_FILE = "removals.jsonl"
+DUPES_DECISIONS_FILE = "dupes_decisions.json"
 
 
 def queue_path():
@@ -64,8 +67,20 @@ def unsorted_liked(lib, exclude):
     return [t for t in lib["liked"] if t["videoId"] not in filed]
 
 
-def decide(vectors, tracks, bundle, thresholds, shortlist):
-    """Split tracks into confident placements and queue entries."""
+def load_dedupe_blocks():
+    """(dropped videoIds, blocked (playlist, videoId) pairs) — see
+    removals.dedupe_blocks."""
+    return dedupe_blocks(os.path.join(config.REPORT_DIR, REMOVALS_FILE),
+                         os.path.join(config.DATA_DIR, DUPES_DECISIONS_FILE))
+
+
+def decide(vectors, tracks, bundle, thresholds, shortlist, blocked=frozenset()):
+    """Split tracks into confident placements and queue entries.
+
+    blocked holds (playlist, videoId) placements a dedupe decision removed:
+    those playlists are never offered for that track, so a track can't be
+    placed back where it was deliberately taken out of.
+    """
     ids = [t["videoId"] for t in tracks if t["videoId"] in vectors]
     if not ids:
         return [], []
@@ -76,7 +91,10 @@ def decide(vectors, tracks, bundle, thresholds, shortlist):
 
     placements, queued = [], []
     for i, video_id in enumerate(ids):
-        order = np.argsort(-proba[i])
+        order = [j for j in np.argsort(-proba[i])
+                 if (str(classes[j]), video_id) not in blocked]
+        if not order:
+            continue
         best = classes[order[0]]
         p_best = float(proba[i, order[0]])
         rule = thresholds.get(str(best), {})
@@ -174,6 +192,14 @@ def main():
 
     pending = unsorted_liked(lib, args.exclude)
     print(f"{len(pending)} liked track(s) not in any playlist")
+    # A tier-C loser is liked but in no playlist, so it looks unsorted. It was
+    # removed on purpose — the kept upload stands for it — so it is neither
+    # placed nor queued (#596).
+    dropped, blocked = load_dedupe_blocks()
+    removed = [t for t in pending if t["videoId"] in dropped]
+    if removed:
+        pending = [t for t in pending if t["videoId"] not in dropped]
+        print(f"{len(removed)} skipped: removed as a duplicate upload")
     if not pending:
         print("Nothing to sort.")
         return
@@ -193,7 +219,7 @@ def main():
     vectors = embed.embed_tracks(paths, backend=bundle["backend"],
                                  prune_audio=args.prune_audio)
     placements, queued = decide(vectors, pending, bundle, thresholds,
-                                args.shortlist)
+                                args.shortlist, blocked)
 
     print(f"\n{len(placements)} confident placement(s), "
           f"{len(queued)} queued for review")

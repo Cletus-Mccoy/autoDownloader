@@ -1204,6 +1204,24 @@ def _dupes_decisions():
     return _read_json(DUPES_DECISIONS_FILE, {})
 
 
+def _dupes_hidden(decided, key):
+    """Whether a decided group stays off the page.
+
+    A skip hides it for good. A resolve (or keep) removed every copy but the
+    kept one, so the group only exists again when a removed copy came back —
+    the nightly sort re-filed one (#596), or it was added by hand. Then the
+    decision no longer holds and the group is shown again."""
+    decision = decided.get(key)
+    return bool(decision) and decision.get("action") == "skip"
+
+
+def _dupes_resurfaced(decided, key):
+    decision = decided.get(key) or {}
+    if decision.get("action") not in ("resolve", "keep"):
+        return None
+    return {"keep": decision.get("keep"), "at": decision.get("at")}
+
+
 def _record_dupes_decision(key, **fields):
     decisions = _dupes_decisions()
     decisions[key] = {**fields, "at": datetime.datetime.utcnow().isoformat()}
@@ -1243,7 +1261,7 @@ def sort_duplicates():
     groups = []
     for entry in dupes["across"]:
         key = f"B:{entry['videoId']}"
-        if key in decided:
+        if _dupes_hidden(decided, key):
             continue
         track = entry["track"]
         groups.append({
@@ -1252,11 +1270,12 @@ def sort_duplicates():
             "has_preview": _has_preview(entry["videoId"]),
             "options": [{"value": p, "label": p} for p in entry["playlists"]],
             "note": "in several playlists — keep it in which one?",
+            "resurfaced": _dupes_resurfaced(decided, key),
         })
     for group in dupes["reuploads"]:
         ids = sorted(group["copies"])
         key = "C:" + ",".join(ids)
-        if key in decided:
+        if _dupes_hidden(decided, key):
             continue
         copies = group["copies"]
         all_playlists = {p for info in copies.values() for p in info["playlists"]}
@@ -1273,6 +1292,7 @@ def sort_duplicates():
                         for vid in ids],
             "note": ("same song uploaded twice in one playlist" if len(all_playlists) == 1
                      else "copies live in different playlists — the loser leaves its playlist entirely"),
+            "resurfaced": _dupes_resurfaced(decided, key),
         })
     groups.sort(key=lambda g: (g["tier"], (g["artist"] or "").lower(), (g["title"] or "").lower()))
     return jsonify({"tier_a": tier_a, "tier_a_extra": sum(t["extra"] for t in tier_a),

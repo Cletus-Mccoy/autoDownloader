@@ -115,3 +115,28 @@ def test_duplicates_endpoint_works_without_scripts_on_path(client, dupes_env, mo
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)   # what the app's import block does at startup
     assert client.get("/api/sort/duplicates").status_code == 200
+
+
+def test_resolved_group_resurfaces_when_removed_copy_returns(client, dupes_env, monkeypatch):
+    """#596: the nightly sort put a tier-C loser back; the group must show
+    again instead of hiding behind the old decision."""
+    yt = FakeYT()
+    import scripts.ytmusic_auth as auth
+    monkeypatch.setattr(auth, "headers_to_ytmusic", lambda: yt)
+    key = [g["key"] for g in client.get("/api/sort/duplicates").get_json()["groups"] if g["tier"] == "C"][0]
+    client.post("/api/sort/duplicates/resolve", json={"key": key, "keep": "v3"})
+    assert not any(g["tier"] == "C" for g in client.get("/api/sort/duplicates").get_json()["groups"])
+
+    lib = json.load(open(dupes_env.VIBE_LIBRARY_FILE))
+    lib["playlists"][1]["tracks"].append(_t("v4", "s4new", "Same Song (Official Video)"))
+    json.dump(lib, open(dupes_env.VIBE_LIBRARY_FILE, "w"))
+
+    groups = client.get("/api/sort/duplicates").get_json()["groups"]
+    back = [g for g in groups if g["key"] == key]
+    assert back and back[0]["resurfaced"]["keep"] == "v3"
+
+
+def test_skipped_group_stays_hidden(client, dupes_env):
+    key = [g["key"] for g in client.get("/api/sort/duplicates").get_json()["groups"] if g["tier"] == "C"][0]
+    client.post("/api/sort/duplicates/skip", json={"key": key})
+    assert not any(g["key"] == key for g in client.get("/api/sort/duplicates").get_json()["groups"])
