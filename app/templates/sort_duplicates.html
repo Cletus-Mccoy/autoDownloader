@@ -127,6 +127,7 @@ function show() {
             <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded ${g.tier === 'B' ? 'bg-indigo-900/60 text-indigo-200' : 'bg-purple-900/60 text-purple-200'}">${g.tier}</span>
             <span class="text-xs text-gray-500">${escapeHtml(g.note)}</span>
         </div>
+        ${g.resurfaced ? `<div class="mb-3 px-3 py-2 rounded-lg bg-amber-900/20 border border-amber-800/40 text-xs text-amber-200/90">Back again: resolved ${escapeHtml((g.resurfaced.at || '').slice(0, 10))} keeping ${escapeHtml(g.resurfaced.keep || '?')}, but a removed copy returned.</div>` : ''}
         <div class="mb-4">
             <div class="text-lg font-semibold text-white leading-snug">${escapeHtml(g.title || '?')}</div>
             <div class="text-sm text-gray-400 mt-0.5">${escapeHtml(g.artist || '?')}</div>
