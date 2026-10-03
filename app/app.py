@@ -919,6 +919,9 @@ def sort_stats():
         "queue_generated_at": queue.get("generated_at"),
         # Tracks still needing work before they could be placed at all.
         "awaiting_embedding": max(0, len(unsorted) - len(queue.get("tracks", []))),
+        # Same variable the scheduler reads, so the page can say how many
+        # nights a backlog takes to drain.
+        "nightly_cap": _int_env("VIBE_MAX_NEW_AUDIO", 50),
         "vectors": have_vectors,
     }
     rows = []
@@ -964,7 +967,15 @@ def sort_stats():
     }))
 
 
+def _int_env(name, default):
+    try:
+        return int(os.getenv(name, default))
+    except ValueError:
+        return default
+
+
 _typical_cache = {"key": None, "value": None}
+_overlap_cache = {"key": None, "value": None, "vectors": None}
 
 
 @app.route("/api/sort/typical")
@@ -1071,6 +1082,78 @@ def sort_skip():
 # they are served minus the ones already decided, and a decision either moves
 # the track (add to target, then remove from source) or keeps it, which hides
 # it while it stays in that playlist.
+
+def _overlap_inputs():
+    """(library, vectors, exclude, cache key), or None before anything is embedded."""
+    meta = _read_json(f"{VIBE_DIR}/thresholds.json", {})
+    backend = meta.get("backend") or "effnet"
+    npz = os.path.join(VIBE_DIR, "embeddings", f"{backend}.npz")
+    if not os.path.exists(npz) or not os.path.exists(VIBE_LIBRARY_FILE):
+        return None
+    key = (os.path.getmtime(npz), os.path.getmtime(VIBE_LIBRARY_FILE),
+           tuple(_sorter_excludes()))
+    return npz, key
+
+
+def _overlap_state():
+    """The overlap analysis and the vectors behind it, recomputed only when
+    the embeddings or the library change."""
+    inputs = _overlap_inputs()
+    if inputs is None:
+        return None
+    npz, key = inputs
+    if _overlap_cache["key"] != key:
+        import numpy as np
+        from scripts.vibe import overlap
+        lib = _read_json(VIBE_LIBRARY_FILE, {})
+        with np.load(npz) as data:
+            vectors = {k: data[k] for k in data.files}
+        exclude = _sorter_excludes()
+        result = overlap.analyse(lib, vectors, exclude=exclude)
+        if result is not None:
+            audio_dir = os.path.join(VIBE_DIR, "audio")
+            for t in result["tracks"]:
+                t["has_preview"] = any(
+                    os.path.exists(os.path.join(audio_dir, f"{t['videoId']}.{ext}"))
+                    for ext in ("m4a", "wav"))
+            result["splits"] = overlap.split_summary(lib, vectors, exclude=exclude)
+        _overlap_cache.update(key=key, value=result,
+                              vectors=(lib, vectors, exclude))
+    return _overlap_cache
+
+
+@app.route("/api/sort/overlap")
+def sort_overlap():
+    """How the playlists overlap in sound: confusion matrix, entangled pairs,
+    tracks worth a second look, and which playlists look like two."""
+    state = _overlap_state()
+    if state is None or state["value"] is None:
+        return jsonify({"playlists": [], "stats": {}, "matrix": {},
+                        "centroid_similarity": {}, "pairs": [], "tracks": [],
+                        "splits": {}})
+    return jsonify(_json_safe(state["value"]))
+
+
+@app.route("/api/sort/split")
+def sort_split():
+    """One playlist's two clusters, with plot coordinates."""
+    title = request.args.get("playlist", "")
+    state = _overlap_state()
+    if state is None:
+        return jsonify({"error": "nothing embedded yet"}), 404
+    from scripts.vibe import overlap
+    lib, vectors, exclude = state["vectors"]
+    detail = overlap.split_detail(lib, vectors, title, exclude=exclude)
+    if detail is None:
+        return jsonify({"error": f"unknown playlist {title!r}"}), 404
+    audio_dir = os.path.join(VIBE_DIR, "audio")
+    for cluster in detail["clusters"]:
+        for ex in cluster["examples"]:
+            ex["has_preview"] = any(
+                os.path.exists(os.path.join(audio_dir, f"{ex['videoId']}.{ext}"))
+                for ext in ("m4a", "wav"))
+    return jsonify(_json_safe(detail))
+
 
 def _remodel_rows():
     import csv
