@@ -3,8 +3,14 @@ import json
 import os
 
 
-def test_index_returns_html(client):
+def test_index_is_player(client):
     resp = client.get("/")
+    assert resp.status_code == 200
+    assert b"Music Player" in resp.data
+
+
+def test_downloads_dashboard_returns_html(client):
+    resp = client.get("/downloads")
     assert resp.status_code == 200
     assert b"YT Music" in resp.data
 
@@ -512,7 +518,7 @@ def test_sort_stats_never_emits_nan(client, flask_app):
 
 
 def test_index_hosts_sorter_tools_in_a_modal(client):
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/downloads").get_data(as_text=True)
     for path, label in (("/sort", "New likes"), ("/sort/misfiled", "Misfiled"),
                         ("/sort/duplicates", "Duplicates"), ("/sort/stats", "Stats")):
         assert f"openToolModal('{path}'" in html and label in html
@@ -523,3 +529,36 @@ def test_tool_pages_support_embed_mode(client):
     for path in ("/sort", "/sort/misfiled", "/sort/duplicates", "/sort/stats"):
         html = client.get(path + "?embed=1").get_data(as_text=True)
         assert "has('embed')" in html and "tool-modal-close" in html
+
+
+# ── Player-driven downloads ──────────────────────────────────────────────────
+
+def test_download_url_rejects_invalid(client):
+    assert client.post("/api/download-url", json={"url": "not a url"}).status_code == 400
+
+
+def test_download_url_starts_run(client, monkeypatch):
+    import app as flask_module
+    started = {}
+    monkeypatch.setattr(flask_module, "_start_run", lambda args=(): started.setdefault("args", args) or True)
+    resp = client.post("/api/download-url", json={"url": "https://music.youtube.com/watch?v=abc"})
+    assert resp.status_code == 202
+    assert started["args"] == ("--url", "https://music.youtube.com/watch?v=abc")
+
+
+def test_download_url_conflict_when_running(client, monkeypatch):
+    import app as flask_module
+    monkeypatch.setattr(flask_module, "_start_run", lambda args=(): False)
+    assert client.post("/api/download-url", json={"url": "https://example.com/x"}).status_code == 409
+
+
+def test_fetch_requests_get_json_not_redirect(client):
+    resp = client.post("/auth/revoke", headers={"X-Requested-With": "fetch"})
+    assert resp.status_code == 200 and resp.get_json()["ok"] is True
+
+
+def test_player_hosts_sorter_pages(client):
+    html = client.get("/").get_data(as_text=True)
+    for path in ("/sort", "/sort/misfiled", "/sort/duplicates", "/sort/stats"):
+        assert f'data-path="{path}"' in html
+    assert "prompt(" not in html and "confirm(" not in html.replace("askConfirm(", "").replace("confirm: ", "")

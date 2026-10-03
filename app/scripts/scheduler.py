@@ -97,6 +97,11 @@ def run_downloader():
                    [sys.executable, "/app/scripts/download.py"], f)
 
     log_run("success" if ok else "failed", log_file)
+    try:
+        from musiclib import default_library
+        default_library().scan()
+    except Exception as e:
+        print(f"library rescan failed: {e}")
 
 
 if __name__ == "__main__":

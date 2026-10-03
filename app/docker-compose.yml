@@ -6,3 +6,4 @@ services:
     volumes:
       - ./data:/app/data
       - ./downloads:/app/downloads
+      - ./music:/app/music

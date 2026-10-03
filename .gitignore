@@ -22,3 +22,6 @@ __pycache__/
 
 # Virtual environment
 .venv/
+
+# Local sandbox data
+dev/

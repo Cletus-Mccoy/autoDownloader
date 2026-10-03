@@ -1,0 +1,10 @@
+# Local sandbox: separate folders under ./dev, port 8081. Never touches the NAS or app/data.
+services:
+  ytmusic:
+    build: .
+    ports:
+      - "8081:8080"
+    volumes:
+      - ../dev/data:/app/data
+      - ../dev/downloads:/app/downloads
+      - ../dev/music:/app/music

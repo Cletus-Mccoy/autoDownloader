@@ -188,7 +188,7 @@ def download_playlist(playlist):
         "--restrict-filenames",
         "--sleep-interval", "2",
         "--max-sleep-interval", "5",
-        "--postprocessor-args", "ExtractAudio:-avoid_negative_ts make_zero -c:a libmp3lame -b:a 320k -ac 2 -ar 44100",
+        "--postprocessor-args", f"ExtractAudio:-avoid_negative_ts make_zero -c:a libmp3lame -b:a {AUDIO_QUALITY}k -ac 2 -ar 44100",
     ]
 
     if cookies_path:
@@ -215,6 +215,11 @@ def download_playlist(playlist):
         return False
 
 
+def download_url(url):
+    """Download a single track/playlist URL into BASE_DIR/Singles."""
+    return download_playlist({"title": "Singles", "url": url, "count": "?"})
+
+
 def main():
     print("\n" + "=" * 60)
     print("YouTube Music Playlist Downloader")
@@ -231,6 +236,10 @@ def main():
         print("⚠ No auth headers found — authenticate via the web UI first")
 
     print(f"\n📁 Download location: {BASE_DIR}")
+
+    if "--url" in sys.argv:
+        download_url(sys.argv[sys.argv.index("--url") + 1])
+        return
 
     playlists = get_playlists()
     if not playlists and get_cookie_header():

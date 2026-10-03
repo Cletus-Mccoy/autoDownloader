@@ -184,3 +184,18 @@ def test_download_playlist_invokes_resolved_binary(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda cmd, **k: seen.setdefault("cmd", cmd) or subprocess.CompletedProcess(cmd, 0))
     dl.download_playlist({"title": "T", "url": "https://example.com", "count": 1})
     assert seen["cmd"][0] == "/opt/venv/bin/yt-dlp"
+
+
+def test_download_url_targets_singles_and_honours_quality(tmp_path, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(dl, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(dl, "AUDIO_QUALITY", "192")
+    monkeypatch.setattr(dl, "get_cookie_header", lambda: None)
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: captured.update(cmd=cmd) or subprocess.CompletedProcess(cmd, 0))
+
+    dl.download_url("https://music.youtube.com/watch?v=abc")
+
+    cmd = captured["cmd"]
+    assert "https://music.youtube.com/watch?v=abc" in cmd
+    assert any("/Singles/" in c for c in cmd)
+    assert "-b:a 192k" in cmd[cmd.index("--postprocessor-args") + 1]
