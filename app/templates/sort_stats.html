@@ -6,12 +6,58 @@
     <title>Sorter stats — YT Music</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root { --card:#111827; --line:#1f2937; --muted:#6b7280; --accent:#818cf8; }
+        html { scroll-behavior: smooth; }
+        body { background:#0a0f1a; }
+        .card { background:var(--card); border:1px solid var(--line); border-radius:14px; }
+        .eyebrow { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:600; }
+        .num { font-variant-numeric: tabular-nums; }
+        .chip { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; white-space:nowrap; }
+        .chip-ok     { background:rgba(16,185,129,.12); color:#34d399; }
+        .chip-warn   { background:rgba(245,158,11,.12); color:#fbbf24; }
+        .chip-bad    { background:rgba(244,63,94,.12);  color:#fb7185; }
+        .chip-info   { background:rgba(56,189,248,.12); color:#38bdf8; }
+        .chip-mute   { background:rgba(107,114,128,.15); color:#9ca3af; }
+        .chip-accent { background:rgba(129,140,248,.14); color:#a5b4fc; }
+        .btn { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:9px; font-size:12px; font-weight:600;
+               border:1px solid #374151; background:#1f2937; color:#e5e7eb; transition:all .12s; cursor:pointer; }
+        .btn:hover { background:#4f46e5; border-color:#6366f1; color:#fff; }
+        .btn-primary { background:#4f46e5; border-color:#6366f1; color:#fff; }
+        .btn-primary:hover { background:#6366f1; }
+        .btn-ghost { background:transparent; border-color:transparent; color:#9ca3af; }
+        .btn-ghost:hover { background:#1f2937; color:#fff; border-color:transparent; }
+        .btn:focus-visible, .tab:focus-visible, .cell:focus-visible, input:focus-visible, select:focus-visible { outline:2px solid #818cf8; outline-offset:2px; }
+        .tab { padding:10px 14px; font-size:13px; font-weight:600; color:#9ca3af; border-bottom:2px solid transparent; white-space:nowrap; cursor:pointer; background:none; }
+        .tab:hover { color:#fff; }
+        .tab[aria-selected=true] { color:#fff; border-bottom-color:#818cf8; }
+        .field { background:#0b1220; border:1px solid #374151; border-radius:9px; padding:6px 10px; font-size:12px; color:#e5e7eb; }
+        .bar { height:6px; border-radius:99px; background:#1f2937; overflow:hidden; }
+        .bar > i { display:block; height:100%; border-radius:99px; }
+        .heat { display:grid; gap:2px; }
+        .cell { aspect-ratio:1; min-height:18px; border-radius:4px; cursor:pointer; border:0; padding:0; transition:transform .08s; }
+        .cell:hover { transform:scale(1.25); position:relative; z-index:2; outline:1px solid #fff; }
+        .rowlab { font-size:11px; color:#9ca3af; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:right; padding-right:8px; display:flex; align-items:center; justify-content:flex-end; }
+        .rowlab.on, .collab.on { color:#fff; font-weight:700; }
+        .collab { font-size:10px; color:#6b7280; text-align:center; }
+        th.sortable { cursor:pointer; user-select:none; }
+        th.sortable:hover { color:#e5e7eb; }
+        #tip { position:fixed; pointer-events:none; z-index:80; background:#030712; border:1px solid #374151; border-radius:8px; padding:6px 9px; font-size:11px; color:#e5e7eb; max-width:300px; box-shadow:0 8px 24px rgba(0,0,0,.5); display:none; }
+        #toast { position:fixed; left:50%; transform:translateX(-50%); bottom:76px; z-index:90; display:none; }
+        details > summary { list-style:none; cursor:pointer; }
+        details > summary::-webkit-details-marker { display:none; }
+        details[open] .caret { transform:rotate(90deg); }
+        .caret { transition:transform .12s; display:inline-block; color:#6b7280; }
+        .skeleton { background:linear-gradient(90deg,#111827,#1f2937,#111827); background-size:200% 100%; animation:sk 1.2s infinite; border-radius:10px; }
+        @keyframes sk { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+        @media (prefers-reduced-motion: reduce) { .skeleton { animation:none } html { scroll-behavior:auto } .cell { transition:none } }
+    </style>
 </head>
-<body class="bg-gray-950 text-gray-100 min-h-screen" style="background-color:#0a0f1a">
+<body class="text-gray-100 min-h-screen">
 
-<div class="max-w-3xl mx-auto px-4 py-8">
+<div id="shell" class="max-w-6xl mx-auto px-4 pt-6 pb-24">
 
-    <div class="flex items-center justify-between mb-6">
+    <div id="page-header" class="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div class="flex items-center gap-2">
             <span class="text-xl">📊</span>
             <h1 class="text-base font-bold tracking-tight text-white">Sorter stats</h1>
@@ -24,289 +70,742 @@
         </div>
     </div>
 
-    <div id="body" class="text-sm text-gray-500">Loading…</div>
+    <nav id="tabs" role="tablist" aria-label="Stats sections"
+         class="sticky top-0 z-30 -mx-4 px-4 flex overflow-x-auto border-b border-gray-800"
+         style="background:rgba(10,15,26,.92);backdrop-filter:blur(8px)"></nav>
+
+    <main id="view" class="pt-5" aria-live="polite">
+        <div class="skeleton h-28 mb-4"></div><div class="skeleton h-48"></div>
+    </main>
 </div>
 
+<!-- One player for the whole page: any ▶ plays here, so playback survives tab changes. -->
+<div id="player" class="fixed bottom-0 inset-x-0 z-40 hidden border-t border-gray-800"
+     style="background:rgba(3,7,18,.95);backdrop-filter:blur(8px)">
+    <div class="max-w-6xl mx-auto px-4 py-2 flex items-center gap-3">
+        <span class="text-gray-500 text-xs flex-none">Now playing</span>
+        <span id="player-label" class="text-xs text-gray-200 truncate min-w-0 flex-1"></span>
+        <audio id="audio" controls preload="none" class="h-8 flex-none" style="max-width:46%"></audio>
+        <button class="btn btn-ghost" data-act="stop" aria-label="Close player">✕</button>
+    </div>
+</div>
+
+<div id="toast" class="card px-4 py-2.5 text-xs flex items-center gap-3 shadow-2xl" role="status"></div>
+<div id="tip"></div>
+
 <script>
-// Embedded in the downloader's tool modal: the modal carries the title and
+// ── Embed mode ────────────────────────────────────────────────────────
+// Hosted in the downloader's tool modal: the modal carries the title and the
 // close button, so the page header only duplicates them.
 if (new URLSearchParams(location.search).has('embed')) {
-    document.querySelector('.flex.items-center.justify-between.mb-6')?.classList.add('hidden');
+    document.getElementById('page-header').classList.add('hidden');
+    document.getElementById('shell').classList.replace('max-w-6xl', 'max-w-none');
+    document.getElementById('shell').classList.replace('pt-6', 'pt-0');
     document.addEventListener('keydown', e => { if (e.key === 'Escape') parent.postMessage('tool-modal-close', '*'); });
 }
-function pct(x, digits = 0) {
-    return (x === null || x === undefined) ? '—' : (x * 100).toFixed(digits) + '%';
+
+// ── Helpers ───────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pct = (x, d = 0) => (x === null || x === undefined) ? '—' : (x * 100).toFixed(d) + '%';
+const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
+
+// "74. ROCK / ELECTRIC" → code "74", label "ROCK / ELECTRIC". Playlists without
+// a numeric prefix fall back to their first letters.
+function parts(name) {
+    const m = /^\s*(\d+)\.?\s*(.*)$/.exec(name);
+    return m ? {code: m[1], label: m[2] || name, n: +m[1]}
+             : {code: name.slice(0, 3), label: name, n: Infinity};
 }
-function esc(s) {
-    return String(s ?? '').replace(/[&<>"']/g, c =>
-        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const byNumber = (a, b) => parts(a).n - parts(b).n || a.localeCompare(b);
+
+const store = {
+    get(k, d) { try { const v = localStorage.getItem('sorterstats.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('sorterstats.' + k, JSON.stringify(v)); } catch (e) {} },
+};
+
+const S = {
+    stats: null, overlap: null, typical: null,
+    tab: 'overview',
+    plSort: {key: 'support', dir: -1}, plFilter: 'all', plQ: '',
+    heatOrder: 'cluster', heatMetric: 'share',
+    focus: null,
+    rv: {kind: 'misfiled', current: '', other: '', q: '', shown: 40},
+    dismissed: new Set(store.get('dismissed', [])),
+    moved: new Set(), movesMade: 0,
+    splitSel: null, splitDetail: {},
+    soundQ: '',
+};
+
+const TABS = [
+    ['overview', 'Overview'], ['playlists', 'Playlists'], ['overlap', 'Overlap'],
+    ['review', 'Review'], ['splits', 'Splits'], ['sound', 'Sound'],
+];
+
+// ── Tooltip / toast / player ──────────────────────────────────────────
+const tip = $('tip');
+function showTip(e, html) {
+    tip.innerHTML = html; tip.style.display = 'block';
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - w - 8) + 'px';
+    tip.style.top = Math.min(e.clientY + 14, innerHeight - h - 8) + 'px';
+}
+const hideTip = () => { tip.style.display = 'none'; };
+
+let toastTimer;
+function toast(msg, undo) {
+    const el = $('toast');
+    el.innerHTML = `<span>${msg}</span>` + (undo ? `<button class="btn btn-primary" data-act="undo">Undo</button>` : '');
+    el.style.display = 'flex';
+    el._undo = undo;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.style.display = 'none'; }, undo ? 9000 : 3500);
 }
 
+function play(videoId, label) {
+    const a = $('audio');
+    $('player').classList.remove('hidden');
+    $('player-label').textContent = label;
+    a.src = `/api/sort/preview/${videoId}`;
+    a.onerror = () => toast('No cached snippet for that track.');
+    a.play().catch(() => {});
+}
+const playBtn = (t, extra = '') => t.has_preview === false
+    ? `<a href="https://music.youtube.com/watch?v=${esc(t.videoId)}" target="_blank" rel="noopener"
+          class="w-7 h-7 rounded-lg bg-gray-800 text-gray-500 text-[11px] flex items-center justify-center flex-none ${extra}"
+          title="No cached snippet — open on YouTube Music" aria-label="Open on YouTube Music">&#8599;&#xFE0E;</a>`
+    : `<button data-act="play" data-id="${esc(t.videoId)}" data-label="${esc((t.artist || '?') + ' — ' + (t.title || '?'))}"
+          class="w-7 h-7 rounded-lg bg-gray-800 hover:bg-indigo-600 text-gray-200 text-[11px] flex-none ${extra}"
+          title="Play 60 s snippet" aria-label="Play snippet">&#9654;&#xFE0E;</button>`;
+
+// ── Small components ──────────────────────────────────────────────────
 function tile(label, value, note, accent) {
-    return `<div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
-        <div class="text-[11px] uppercase tracking-wide text-gray-500 mb-1">${label}</div>
-        <div class="text-2xl font-semibold ${accent || 'text-white'} tabular-nums">${value}</div>
-        <div class="text-[11px] text-gray-600 mt-1">${note || ''}</div>
+    return `<div class="card p-4">
+        <div class="eyebrow mb-1.5">${label}</div>
+        <div class="text-3xl font-semibold num ${accent || 'text-white'} leading-none">${value}</div>
+        <div class="text-[11px] text-gray-500 mt-2">${note || '&nbsp;'}</div>
     </div>`;
 }
+const empty = (title, body) => `<div class="card p-10 text-center">
+    <div class="text-gray-200 font-medium mb-1">${title}</div>
+    <div class="text-xs text-gray-500 max-w-md mx-auto">${body}</div></div>`;
+const skeleton = () => `<div class="skeleton h-24 mb-4"></div><div class="skeleton h-64"></div>`;
+const help = txt => `<p class="text-[12px] text-gray-500 leading-relaxed mt-2 max-w-3xl">${txt}</p>`;
+const section = (title, sub, body, right = '') => `<section class="card p-5 mb-5">
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+        <div><h2 class="text-sm font-semibold text-white">${title}</h2>${sub ? `<p class="text-[12px] text-gray-500 mt-0.5">${sub}</p>` : ''}</div>
+        <div class="flex items-center gap-2">${right}</div>
+    </div>${body}</section>`;
 
-async function load() {
-    const d = await (await fetch('/api/sort/stats')).json();
-    const m = d.model, a = d.activity;
+function status(r) {
+    if (r.threshold !== null && r.threshold !== undefined) return ['chip-ok', `Auto ≥ ${r.threshold.toFixed(2)}`, 'routable'];
+    if (r.revoked) return ['chip-bad', 'Revoked', 'revoked'];
+    return ['chip-warn', 'Manual only', 'manual'];
+}
 
-    if (!m.trained_at) {
-        document.getElementById('body').innerHTML =
-            `<div class="bg-gray-900 border border-gray-800 rounded-lg p-6 text-center">
-                <div class="text-gray-300 font-medium mb-1">No model yet</div>
-                <div class="text-xs text-gray-500">Run <code class="bg-gray-800 px-1.5 py-0.5 rounded">vibe_train.py</code> to train the sorter.</div>
-            </div>`;
-        return;
+// ── Overview ──────────────────────────────────────────────────────────
+function attentionItems() {
+    const items = [];
+    const rows = S.stats.playlists;
+    const revoked = rows.filter(r => r.revoked).length;
+    const manual = rows.filter(r => r.threshold === null && !r.revoked).length;
+    if (revoked + manual) {
+        items.push({tab: 'playlists', filter: 'blocked', tone: 'warn',
+            title: `${plural(revoked + manual, 'playlist')} can't place tracks automatically`,
+            body: `${revoked} revoked, ${manual} manual only. Each overlaps a neighbour too much.`});
     }
+    const o = S.overlap;
+    if (o && o.pairs) {
+        const hot = o.pairs.find(p => ['interchangeable', 'one-sided', 'entangled'].includes(p.verdict));
+        if (hot) items.push({tab: 'overlap', focus: hot.a, tone: 'warn',
+            title: `${esc(parts(hot.a).label)} and ${esc(parts(hot.b).label)} overlap heavily`,
+            body: `${pct(hot.a_to_b)} of one and ${pct(hot.b_to_a)} of the other sound like the neighbour. See the Overlap tab.`});
+        const mis = o.tracks.filter(t => t.kind === 'misfiled' && !gone(t)).length;
+        if (mis) items.push({tab: 'review', tone: 'info',
+            title: `${plural(mis, 'track')} sound closer to another playlist`,
+            body: 'Move them, or dismiss the ones that are right where they are.'});
+        const split = topSplit();
+        if (split) items.push({tab: 'splits', split: split[0], tone: 'info',
+            title: `${esc(parts(split[0]).label)} looks like two playlists`,
+            body: `Two clusters of ${split[1].sizes.join(' and ')} tracks, clearly apart.`});
+    }
+    const p = S.stats.pipeline || {};
+    if (p.awaiting_embedding > 0) {
+        const nights = p.nightly_cap ? Math.ceil(p.awaiting_embedding / p.nightly_cap) : null;
+        items.push({tab: null, tone: 'mute',
+            title: `${plural(p.awaiting_embedding, 'new track')} still waiting for a snippet`,
+            body: nights ? `The nightly run takes ${p.nightly_cap}; this clears in ${plural(nights, 'night')}.` : 'The nightly run fetches a capped number at a time.'});
+    }
+    return items;
+}
+const TONE = {warn: 'chip-warn', info: 'chip-info', mute: 'chip-mute'};
 
+function renderOverview() {
+    const d = S.stats, m = d.model, a = d.activity, p = d.pipeline || {};
+    if (!m.trained_at) {
+        return empty('No model yet', 'Run <code class="bg-gray-800 px-1.5 py-0.5 rounded">vibe_train.py</code> to train the sorter.');
+    }
     const trained = m.trained_at.slice(0, 16).replace('T', ' ');
-
-    // Automation rate is the headline: it is the share of placements the model
-    // made without asking, and the number that should climb as the queue is
-    // worked. Everything else is context for it.
-    let html = `
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        ${tile('Placed on its own', pct(a.automation_rate),
-               `${a.auto} of ${a.placed} placements`, 'text-indigo-400')}
+    let h = `<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        ${tile('Placed on its own', pct(a.automation_rate), `${a.auto} of ${a.placed} placements`, 'text-indigo-400')}
         ${tile('Waiting for you', a.queued, 'in the review queue')}
         ${tile('You sorted', a.manual, a.skipped ? `${a.skipped} left alone` : 'by hand')}
-        ${tile('Routable playlists', `${m.routable}/${m.playlists}`,
-               `at ≥ ${pct(m.target_precision)} precision`)}
-    </div>
-
-    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6">
-        <div class="text-[11px] uppercase tracking-wide text-gray-500 mb-3">Model</div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-            <div><div class="text-gray-500 text-xs">Top-1</div><div class="tabular-nums">${pct(m.top1, 1)}</div></div>
-            <div><div class="text-gray-500 text-xs">Top-3</div><div class="tabular-nums">${pct(m.top3, 1)}</div></div>
-            <div><div class="text-gray-500 text-xs">Trained on</div><div class="tabular-nums">${m.n_train} tracks</div></div>
-            <div><div class="text-gray-500 text-xs">Last trained</div><div class="text-xs pt-1">${trained}</div></div>
-        </div>
-        <div class="text-[11px] text-gray-600 mt-3 leading-relaxed">
-            Top-1 is how often its first guess is right; top-3 how often the correct
-            playlist is among the three offered in the queue. The gap between them is
-            why a review queue works: picking from three is usually enough.
-        </div>
+        ${tile('Routable playlists', `${m.routable}<span class="text-gray-600 text-xl">/${m.playlists}</span>`, `at ≥ ${pct(m.target_precision)} precision`)}
     </div>`;
 
-    // Pipeline: where tracks are in the fetch → embed → place chain. Without
-    // this the sorter is a black box between nightly runs.
-    const p = d.pipeline || {};
-    const embedRows = Object.entries(p.embedded || {})
-        .map(([name, n]) => `<span class="inline-flex items-center gap-1.5 mr-3">
-            <span class="text-gray-500">${esc(name)}</span>
-            <span class="tabular-nums">${n === null ? '?' : n}</span>
-        </span>`).join('');
+    // What to do next, derived from the data below. The point of the page is
+    // decisions, so it leads with them.
+    const todo = attentionItems();
+    if (todo.length) {
+        h += section('Worth your attention', 'Generated from the numbers on the other tabs.',
+            `<div class="grid md:grid-cols-2 gap-3">${todo.map((t, i) => `
+                <button data-act="goto" data-i="${i}" ${t.tab ? '' : 'disabled'}
+                    class="text-left p-3.5 rounded-xl border border-gray-800 ${t.tab ? 'hover:border-indigo-500/60 hover:bg-gray-800/40' : 'cursor-default'} transition-colors">
+                    <div class="flex items-center gap-2 mb-1"><span class="chip ${TONE[t.tone]}">${t.tab ? t.tab : 'info'}</span>
+                    ${t.tab ? '<span class="text-gray-600 text-xs ml-auto">→</span>' : ''}</div>
+                    <div class="text-[13px] text-gray-100 font-medium">${t.title}</div>
+                    <div class="text-[12px] text-gray-500 mt-0.5">${t.body}</div>
+                </button>`).join('')}</div>`);
+        S._todo = todo;
+    }
 
-    html += `
-    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6">
-        <div class="text-[11px] uppercase tracking-wide text-gray-500 mb-3">Pipeline</div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm mb-3">
-            <div>
-                <div class="text-gray-500 text-xs">Liked</div>
-                <div class="tabular-nums">${p.liked ?? '—'}</div>
-            </div>
-            <div>
-                <div class="text-gray-500 text-xs">In playlists</div>
-                <div class="tabular-nums">${p.filed ?? '—'}</div>
-            </div>
-            <div>
-                <div class="text-gray-500 text-xs">Not yet sorted</div>
-                <div class="tabular-nums ${p.unsorted ? 'text-amber-400' : ''}">${p.unsorted ?? '—'}</div>
-            </div>
-            <div>
-                <div class="text-gray-500 text-xs">Snippets cached</div>
-                <div class="tabular-nums">${p.audio_files ?? '—'}
-                    <span class="text-xs text-gray-600">· ${p.audio_mb ?? 0} MB</span>
-                </div>
-            </div>
-        </div>
-        <div class="text-xs border-t border-gray-800 pt-3">
-            <span class="text-gray-500 mr-2">Embedded:</span>${embedRows || '<span class="text-gray-600">none yet</span>'}
-        </div>
-        ${p.awaiting_embedding > 0 ? `
-        <div class="text-[11px] text-amber-500/80 mt-2">
-            ${p.awaiting_embedding} unsorted track(s) aren't in the queue yet — they
-            still need a snippet and an embedding. The nightly run fetches a capped
-            number at a time, so a backlog drains over several nights.
-        </div>` : `
-        <div class="text-[11px] text-gray-600 mt-2">
-            Every unsorted track has been embedded and is either placed or in the queue.
-        </div>`}
-        ${p.queue_generated_at ? `
-        <div class="text-[11px] text-gray-600 mt-1">
-            Queue last rebuilt ${esc(p.queue_generated_at.slice(0, 16).replace('T', ' '))} UTC
-        </div>` : ''}
-    </div>`;
-
+    // Honest estimate leads the model section: it is the number to trust.
+    let honest = '';
     if (d.nested && d.nested.length) {
         const stable = d.nested.filter(r => r.folds_qualifying === r.outer_folds).length;
         const scored = d.nested.filter(r => r.precision !== null);
         const acc = scored.reduce((s, r) => s + r.accepted, 0);
         const cor = scored.reduce((s, r) => s + r.precision * r.accepted, 0);
-        html += `
-        <div class="bg-gray-900 border border-amber-900/40 rounded-lg p-4 mb-6">
-            <div class="text-[11px] uppercase tracking-wide text-amber-500/80 mb-2">Honest estimate</div>
-            <div class="text-sm">
-                Measured on held-out data: <span class="tabular-nums font-semibold">${acc ? pct(cor / acc, 1) : '—'}</span>
-                precision · <span class="tabular-nums font-semibold">${stable}</span> playlist(s) qualify in every fold
+        honest = `<div class="rounded-xl p-4 mb-4" style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2)">
+            <div class="eyebrow" style="color:#d97706">Honest estimate · what to expect on new tracks</div>
+            <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1 mt-1">
+                <div><span class="text-2xl font-semibold num">${acc ? pct(cor / acc, 1) : '—'}</span> <span class="text-xs text-gray-400">precision on held-out data</span></div>
+                <div><span class="text-2xl font-semibold num">${stable}</span> <span class="text-xs text-gray-400">playlists qualify in every fold</span></div>
             </div>
-            <div class="text-[11px] text-gray-600 mt-2 leading-relaxed">
-                The per-playlist figures below pick each threshold on the same data they
-                are then scored on, which flatters them. This row picks thresholds on
-                data it never scores, so it is what to expect on new tracks.
-            </div>
+            ${help('Thresholds here are picked on data they never score. The per-playlist figures elsewhere pick and score on the same data, which flatters them.')}
         </div>`;
     }
+    const meter = (label, v, tone) => `<div>
+        <div class="flex justify-between text-xs mb-1"><span class="text-gray-400">${label}</span><span class="num text-gray-200">${pct(v, 1)}</span></div>
+        <div class="bar"><i style="width:${(v || 0) * 100}%;background:${tone}"></i></div></div>`;
+    h += section('Model', `Trained on ${m.n_train} tracks · ${trained}`, `${honest}
+        <div class="grid sm:grid-cols-2 gap-5">${meter('Top-1: first guess is right', m.top1, '#818cf8')}${meter('Top-3: right one is among the three offered', m.top3, '#34d399')}</div>
+        ${help('The gap between them is why a review queue works: picking from three is usually enough.')}`);
 
-    const rows = d.playlists.slice().sort((x, y) =>
-        (y.threshold === null ? -1 : y.recall) - (x.threshold === null ? -1 : x.recall));
-
-    html += `
-    <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-800">
-            <div class="text-[11px] uppercase tracking-wide text-gray-500">Per playlist</div>
+    // Pipeline as a single stacked bar: every liked track is in exactly one stage.
+    const inQueue = Math.max(0, (p.unsorted || 0) - (p.awaiting_embedding || 0));
+    const total = p.liked || 1;
+    const seg = (n, color, label) => n > 0 ? `<i style="width:${n / total * 100}%;background:${color}" title="${label}: ${n}"></i>` : '';
+    const embedRows = Object.entries(p.embedded || {}).map(([k, n]) => `${esc(k)} <b class="text-gray-300 num">${n ?? '?'}</b>`).join(' · ');
+    h += section('Pipeline', 'Where every liked track is: fetch → embed → place.', `
+        <div class="bar !h-3 flex mb-3">${seg(p.filed, '#6366f1', 'In playlists')}${seg(inQueue, '#38bdf8', 'In the review queue')}${seg(p.awaiting_embedding, '#f59e0b', 'Awaiting snippet')}</div>
+        <div class="flex flex-wrap gap-x-6 gap-y-2 text-xs">
+            <span><i class="inline-block w-2 h-2 rounded-sm mr-1.5" style="background:#6366f1"></i><span class="text-gray-500">In playlists</span> <b class="num text-gray-200">${p.filed ?? '—'}</b></span>
+            <span><i class="inline-block w-2 h-2 rounded-sm mr-1.5" style="background:#38bdf8"></i><span class="text-gray-500">In queue</span> <b class="num text-gray-200">${inQueue}</b></span>
+            <span><i class="inline-block w-2 h-2 rounded-sm mr-1.5" style="background:#f59e0b"></i><span class="text-gray-500">Awaiting snippet</span> <b class="num text-gray-200">${p.awaiting_embedding ?? 0}</b></span>
+            <span class="text-gray-600">of ${p.liked ?? '—'} liked</span>
         </div>
-        <div class="overflow-x-auto">
-        <table class="w-full text-xs">
-            <thead class="text-gray-500">
-                <tr class="border-b border-gray-800">
-                    <th class="text-left font-medium px-4 py-2">Playlist</th>
-                    <th class="text-right font-medium px-3 py-2">Tracks</th>
-                    <th class="text-right font-medium px-3 py-2">Cutoff</th>
-                    <th class="text-right font-medium px-3 py-2">Auto</th>
-                    <th class="text-right font-medium px-3 py-2">By hand</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-800/60">
-                ${rows.map(r => `
-                <tr class="${r.threshold === null ? 'text-gray-600' : ''}">
-                    <td class="px-4 py-2">${esc(r.playlist)}</td>
-                    <td class="px-3 py-2 text-right tabular-nums">${r.support ?? '—'}</td>
-                    <td class="px-3 py-2 text-right tabular-nums">
-                        ${r.threshold === null
-                            ? `<span class="${r.revoked ? 'text-amber-600/80' : ''}"
-                                     title="${esc(r.revoked || 'never places a track unattended')}">${
-                                r.revoked ? 'revoked' : 'manual only'}</span>`
-                            : r.threshold.toFixed(2)}
-                    </td>
-                    <td class="px-3 py-2 text-right tabular-nums ${r.auto ? 'text-indigo-400' : ''}">${r.auto || ''}</td>
-                    <td class="px-3 py-2 text-right tabular-nums">${r.manual || ''}</td>
-                </tr>`).join('')}
-            </tbody>
-        </table>
-        </div>
-    </div>
-
-    <div class="text-[11px] text-gray-600 mt-3 leading-relaxed">
-        <span class="text-gray-500">manual only</span> means the playlist never
-        reached the precision target — it overlaps a neighbour too much.
-        <span class="text-amber-600/80">revoked</span> means it looked good on its own
-        data but failed when scored on data its threshold never saw; hover for the
-        reason. Both send their tracks to the queue instead, which is the intended
-        behaviour rather than a gap.
-    </div>`;
+        <div class="grid sm:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-800 text-xs">
+            <div><div class="text-gray-500">Snippets cached</div><div class="num text-gray-200">${p.audio_files ?? '—'} <span class="text-gray-600">· ${p.audio_mb ?? 0} MB</span></div></div>
+            <div><div class="text-gray-500">Embedded</div><div class="text-gray-200">${embedRows || 'none yet'}</div></div>
+            <div><div class="text-gray-500">Nightly fetch</div><div class="num text-gray-200">${p.nightly_cap ? p.nightly_cap + ' tracks' : '—'}${p.queue_generated_at ? `<span class="text-gray-600"> · queue ${esc(p.queue_generated_at.slice(5, 16).replace('T', ' '))} UTC</span>` : ''}</div></div>
+        </div>`);
 
     if (d.by_day && d.by_day.length > 1) {
-        const max = Math.max(...d.by_day.map(x => x.auto + x.manual));
-        html += `
-        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mt-6">
-            <div class="text-[11px] uppercase tracking-wide text-gray-500 mb-3">Recent activity</div>
-            <div class="flex items-end gap-1 h-20">
+        const max = Math.max(...d.by_day.map(x => x.auto + x.manual), 1);
+        h += section('Recent activity', 'Placements per day.', `
+            <div class="flex items-end gap-1.5 h-24" role="img" aria-label="Placements per day">
                 ${d.by_day.map(x => {
-                    const total = x.auto + x.manual;
-                    const h = max ? Math.max(2, (total / max) * 100) : 2;
-                    const autoShare = total ? (x.auto / total) * 100 : 0;
-                    return `<div class="flex-1 flex flex-col justify-end" title="${x.day}: ${x.auto} auto, ${x.manual} by hand">
-                        <div style="height:${h}%" class="w-full rounded-t overflow-hidden flex flex-col-reverse">
-                            <div style="height:${autoShare}%" class="bg-indigo-500 w-full"></div>
-                            <div style="height:${100 - autoShare}%" class="bg-gray-600 w-full"></div>
-                        </div>
-                    </div>`;
+                    const t = x.auto + x.manual, ht = Math.max(3, t / max * 100), as = t ? x.auto / t * 100 : 0;
+                    return `<div class="flex-1 flex flex-col justify-end h-full cursor-default" data-tip="<b>${esc(x.day)}</b><br>${x.auto} automatic · ${x.manual} by hand">
+                        <div style="height:${ht}%" class="w-full rounded-t-md overflow-hidden flex flex-col-reverse">
+                        <div style="height:${as}%;background:#6366f1"></div><div style="height:${100 - as}%;background:#4b5563"></div></div></div>`;
                 }).join('')}
             </div>
-            <div class="flex items-center gap-4 mt-2 text-[11px] text-gray-600">
-                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-indigo-500"></span>automatic</span>
-                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-gray-600"></span>by hand</span>
-            </div>
-        </div>`;
+            <div class="flex justify-between text-[10px] text-gray-600 mt-1"><span>${esc(d.by_day[0].day.slice(5))}</span><span>${esc(d.by_day[d.by_day.length - 1].day.slice(5))}</span></div>
+            <div class="flex gap-4 mt-2 text-[11px] text-gray-500">
+                <span><i class="inline-block w-2 h-2 rounded-sm mr-1" style="background:#6366f1"></i>automatic</span>
+                <span><i class="inline-block w-2 h-2 rounded-sm mr-1" style="background:#4b5563"></i>by hand</span></div>`);
+    }
+    return h;
+}
+
+// ── Playlists ─────────────────────────────────────────────────────────
+function playlistRows() {
+    const ov = (S.overlap && S.overlap.stats) || {};
+    return S.stats.playlists.map(r => {
+        const s = ov[r.playlist] || {};
+        return {...r, cohesion: s.cohesion ?? null, bleed: s.bleed ?? null,
+                nearest: s.nearest ?? null, kind: status(r)[2]};
+    });
+}
+
+function renderPlaylists() {
+    let rows = playlistRows();
+    const counts = {all: rows.length,
+        routable: rows.filter(r => r.kind === 'routable').length,
+        blocked: rows.filter(r => r.kind !== 'routable').length};
+    const q = S.plQ.trim().toLowerCase();
+    rows = rows.filter(r => (S.plFilter === 'all' || (S.plFilter === 'blocked' ? r.kind !== 'routable' : r.kind === S.plFilter))
+                            && (!q || r.playlist.toLowerCase().includes(q)));
+    const {key, dir} = S.plSort;
+    const val = r => key === 'playlist' ? parts(r.playlist).n : (r[key] ?? -1);
+    rows.sort((a, b) => (val(a) - val(b)) * dir || byNumber(a.playlist, b.playlist));
+    const maxTracks = Math.max(...S.stats.playlists.map(r => r.support || 0), 1);
+
+    const th = (k, label, cls = 'text-right') => `<th class="sortable ${cls} font-medium px-3 py-2.5" data-act="sort" data-key="${k}" aria-sort="${S.plSort.key === k ? (S.plSort.dir > 0 ? 'ascending' : 'descending') : 'none'}">
+        ${label}${S.plSort.key === k ? (S.plSort.dir > 0 ? ' ↑' : ' ↓') : ''}</th>`;
+    const chipBtn = (k, label) => `<button data-act="plfilter" data-k="${k}" class="chip ${S.plFilter === k ? 'chip-accent' : 'chip-mute'} !px-3 !py-1">${label} <span class="opacity-60 num">${counts[k]}</span></button>`;
+
+    const body = rows.map(r => {
+        const [cls, label] = status(r);
+        const bleedTone = r.bleed === null ? '' : r.bleed > 0.3 ? 'text-rose-400' : r.bleed > 0.15 ? 'text-amber-400' : 'text-gray-300';
+        const coh = r.cohesion === null ? '—' : r.cohesion.toFixed(2);
+        const p = parts(r.playlist);
+        return `<tr class="border-t border-gray-800/70 hover:bg-gray-800/30 cursor-pointer" data-act="focus" data-name="${esc(r.playlist)}">
+            <td class="px-4 py-2.5"><div class="flex items-center gap-2.5 min-w-0">
+                <span class="text-[11px] text-gray-600 num w-6 text-right flex-none">${esc(p.n === Infinity ? '' : p.code)}</span>
+                <span class="text-gray-100 truncate">${esc(p.label)}</span></div></td>
+            <td class="px-3 py-2.5 text-right"><div class="flex items-center gap-2 justify-end">
+                <div class="bar w-14 hidden sm:block"><i style="width:${(r.support || 0) / maxTracks * 100}%;background:#4b5563"></i></div>
+                <span class="num text-gray-300 w-8">${r.support ?? '—'}</span></div></td>
+            <td class="px-3 py-2.5 text-right"><span class="chip ${cls}" ${r.revoked ? `title="${esc(r.revoked)}"` : ''}>${label}</span></td>
+            <td class="px-3 py-2.5 text-right num text-gray-300">${coh}</td>
+            <td class="px-3 py-2.5 text-right num ${bleedTone}">${r.bleed === null ? '—' : pct(r.bleed)}</td>
+            <td class="px-3 py-2.5 text-right num ${r.auto ? 'text-indigo-400' : 'text-gray-600'}">${r.auto || '·'}</td>
+            <td class="px-3 py-2.5 text-right num ${r.manual ? 'text-gray-200' : 'text-gray-600'}">${r.manual || '·'}</td>
+            <td class="px-3 py-2.5 text-gray-500 hidden md:table-cell truncate max-w-[10rem]">${r.nearest ? esc(parts(r.nearest).label) : '—'}</td>
+        </tr>`;
+    }).join('');
+
+    return section('Playlists', 'Click a row to see its overlaps.', `
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+            <input class="field w-52" data-act="plq" placeholder="Search playlists" value="${esc(S.plQ)}" aria-label="Search playlists">
+            ${chipBtn('all', 'All')}${chipBtn('routable', 'Routable')}${chipBtn('blocked', 'Needs attention')}
+        </div>
+        <div class="overflow-x-auto -mx-5"><table class="w-full text-xs min-w-[640px]">
+            <thead class="text-gray-500"><tr>
+                ${th('playlist', 'Playlist', 'text-left px-4')}${th('support', 'Tracks')}
+                <th class="text-right font-medium px-3 py-2.5">Status</th>
+                ${th('cohesion', 'Cohesion')}${th('bleed', 'Bleed')}${th('auto', 'Auto')}${th('manual', 'By hand')}
+                <th class="text-left font-medium px-3 py-2.5 hidden md:table-cell">Nearest</th>
+            </tr></thead>
+            <tbody>${body || `<tr><td colspan="8" class="text-center text-gray-500 py-8">No playlists match.</td></tr>`}</tbody>
+        </table></div>
+        ${help(`<b class="text-gray-400">Cohesion</b>: how alike the tracks are (1 = identical sound); low means the playlist holds several sounds.
+            <b class="text-gray-400">Bleed</b>: share of its tracks that sound closer to another playlist.
+            <b class="text-gray-400">Manual only</b> never reached the precision target; <b class="text-gray-400">Revoked</b> looked good on its own data but failed on unseen data.
+            Both send their tracks to the queue, which is intended.`)}`);
+}
+
+// ── Overlap ───────────────────────────────────────────────────────────
+const VERDICT = {
+    'interchangeable': ['chip-bad', 'Merge candidate', 'Both playlists lose a large share of tracks to each other and their centres almost coincide.'],
+    'one-sided': ['chip-warn', 'One inside the other', 'One playlist\'s tracks mostly fit the other, but not the reverse. Often a niche playlist inside a broad one.'],
+    'entangled': ['chip-warn', 'Blurry border', 'A meaningful share of tracks on each side could live in either.'],
+    'touching': ['chip-info', 'Slight overlap', 'A few tracks cross over. Worth a look at the border tracks.'],
+    'distinct': ['chip-ok', 'Distinct', 'Clearly separate.'],
+};
+
+function renderOverlap() {
+    const o = S.overlap;
+    if (!o) return skeleton();
+    if (!o.playlists.length) return empty('Nothing to compare yet', 'Overlap needs embedded tracks in at least two playlists.');
+    const order = S.heatOrder === 'cluster' ? o.playlists : o.playlists.slice().sort(byNumber);
+    const k = order.length;
+    const f = S.focus;
+    const sizes = n => o.stats[n] ? o.stats[n].tracks : 0;
+
+    let cells = `<div class="rowlab"></div>` + order.map(c =>
+        `<div class="collab ${f === c ? 'on' : ''}" title="${esc(c)}">${esc(parts(c).code)}</div>`).join('');
+    for (const r of order) {
+        cells += `<div class="rowlab ${f === r ? 'on' : ''}" title="${esc(r)}">${esc(parts(r).label)}</div>`;
+        const row = o.matrix[r] || {};
+        for (const c of order) {
+            const v = row[c] || 0, n = Math.round(v * sizes(r));
+            let bg;
+            if (r === c) bg = `rgba(99,102,241,${0.2 + 0.7 * v})`;
+            else if (v === 0) bg = 'rgba(31,41,55,.45)';
+            else bg = `rgba(245,158,11,${Math.min(1, 0.22 + Math.sqrt(v) * 1.1)})`;
+            const tipHtml = r === c
+                ? `<b>${esc(r)}</b><br>${pct(v)} of its tracks sound closest to their own playlist (${n}/${sizes(r)})`
+                : `<b>${esc(parts(r).label)}</b> → <b>${esc(parts(c).label)}</b><br>${n ? `${n} of ${sizes(r)} tracks (${pct(v)}) sound closer to the second` : 'no tracks cross over'}${n ? '<br><span style="color:#9ca3af">Click to review them</span>' : ''}`;
+            cells += `<button class="cell" style="background:${bg};${f && f !== r && f !== c ? 'opacity:.45' : ''}" data-act="cell" data-r="${esc(r)}" data-c="${esc(c)}"
+                data-tip="${esc(tipHtml)}" aria-label="${esc(parts(r).label + ' to ' + parts(c).label + ': ' + pct(v))}"></button>`;
+        }
     }
 
-    html += `
-        <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mt-6">
-            <div class="flex items-center justify-between mb-1">
-                <div class="text-[11px] uppercase tracking-wide text-gray-500">What each playlist sounds like</div>
-                <audio id="typical-player" controls preload="none" class="h-8"></audio>
-            </div>
-            <div class="text-[11px] text-gray-600 mb-3 leading-relaxed">
-                The tracks closest to each playlist's centre in embedding space, and the
-                ones furthest from it. Cohesion is the average similarity to that centre:
-                low numbers mean a playlist the model hears as several things.
-            </div>
-            <div id="typical" class="text-xs text-gray-500">Loading…</div>
-        </div>`;
+    const heat = section('Confusion map', 'Each row is a playlist; each cell is the share of its tracks that sound nearest to the column\'s playlist.', `
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+            <span class="text-xs text-gray-500">Order</span>
+            <button data-act="heatorder" data-k="cluster" class="chip ${S.heatOrder === 'cluster' ? 'chip-accent' : 'chip-mute'} !px-3 !py-1">Similar together</button>
+            <button data-act="heatorder" data-k="number" class="chip ${S.heatOrder === 'number' ? 'chip-accent' : 'chip-mute'} !px-3 !py-1">By number</button>
+            ${f ? `<button data-act="unfocus" class="btn btn-ghost ml-auto">Clear focus: ${esc(parts(f).label)} ✕</button>` : ''}
+        </div>
+        <div class="overflow-x-auto"><div class="heat" style="grid-template-columns:minmax(120px,190px) repeat(${k},minmax(20px,1fr));min-width:${160 + k * 24}px">${cells}</div></div>
+        <div class="flex flex-wrap items-center gap-4 mt-3 text-[11px] text-gray-500">
+            <span><i class="inline-block w-3 h-3 rounded mr-1.5 align-middle" style="background:rgba(99,102,241,.8)"></i>stays home</span>
+            <span><i class="inline-block w-3 h-3 rounded mr-1.5 align-middle" style="background:rgba(245,158,11,.8)"></i>crosses over (darker = more)</span>
+            <span>Bright blocks off the diagonal are playlists that share a sound.</span>
+        </div>
+        ${help('This is the playlists\' layout in sound, not the classifier\'s opinion: every track is compared to each playlist\'s average sound, with the track left out of its own playlist\'s average so it can\'t vouch for itself.')}`);
 
-    document.getElementById('body').innerHTML = html;
-    loadTypical();
+    const pairs = o.pairs.filter(p => p.verdict !== 'distinct').slice(0, 12);
+    const pairCards = pairs.length ? `<div class="grid lg:grid-cols-2 gap-3">${pairs.map((p, i) => {
+        const [cls, label, why] = VERDICT[p.verdict];
+        const dir = (name, v) => `<div class="flex items-center gap-2 text-[11px]"><span class="text-gray-500 w-24 truncate">${esc(parts(name).label)}</span>
+            <div class="bar flex-1"><i style="width:${Math.min(100, v * 100 * 2)}%;background:#f59e0b"></i></div><span class="num text-gray-300 w-9 text-right">${pct(v)}</span></div>`;
+        return `<div class="rounded-xl border border-gray-800 p-3.5">
+            <div class="flex items-center gap-2 mb-2"><span class="chip ${cls}" title="${esc(why)}">${label}</span>
+                <span class="text-[11px] text-gray-500 ml-auto num">centres ${p.similarity.toFixed(2)} alike</span></div>
+            <div class="text-[13px] text-gray-100 font-medium mb-2">${esc(parts(p.a).label)} <span class="text-gray-600">↔</span> ${esc(parts(p.b).label)}</div>
+            ${dir(p.a, p.a_to_b)}${dir(p.b, p.b_to_a)}
+            <div class="text-[11px] text-gray-500 mt-2">${esc(why)}</div>
+            <div class="flex gap-2 mt-3"><button class="btn" data-act="pair-review" data-i="${i}">Review border tracks</button>
+                <button class="btn btn-ghost" data-act="focus" data-name="${esc(p.a)}">Focus map</button></div>
+        </div>`; }).join('')}</div>` : `<div class="text-xs text-gray-500">No pair stands out: your playlists are well separated.</div>`;
+    S._pairs = pairs;
+
+    return heat + section('Pairs worth a decision', 'Playlist pairs ranked by how many tracks cross between them.', pairCards,
+        '<span class="text-[11px] text-gray-600">bars show the share of each playlist\'s tracks nearer the other</span>');
 }
 
-function playSnippet(videoId, label) {
-    const player = document.getElementById('typical-player');
-    if (!player) return;
-    player.src = `/api/sort/preview/${videoId}`;
-    player.title = label;
-    player.play();
+// ── Review ────────────────────────────────────────────────────────────
+const tkey = t => t.videoId + '|' + t.current;
+const gone = t => S.dismissed.has(tkey(t)) || S.moved.has(tkey(t));
+
+function reviewList() {
+    const f = S.rv, q = f.q.trim().toLowerCase();
+    // A pair filter ("review border tracks" on a pair card) means either
+    // direction between the two playlists.
+    const [pa, pb] = f.pair || [];
+    return S.overlap.tracks.filter(t => !gone(t)
+        && (!f.pair || (t.current === pa && t.other === pb) || (t.current === pb && t.other === pa))
+        && (f.kind === 'all' || t.kind === f.kind)
+        && (!f.current || t.current === f.current)
+        && (!f.other || t.other === f.other)
+        && (!q || `${t.artist} ${t.title}`.toLowerCase().includes(q)));
 }
 
-function trackRow(t, tone) {
-    const label = `${t.artist || '?'} — ${t.title || '?'}`;
-    const play = t.has_preview
-        ? `<button onclick="playSnippet('${esc(t.videoId)}', '${esc(label).replace(/'/g, '&#39;')}')"
-                   class="w-6 h-6 rounded bg-gray-800 hover:bg-indigo-600 text-gray-300 text-[10px] flex-none"
-                   title="play 60s snippet">▶</button>`
-        : `<a href="https://music.youtube.com/watch?v=${esc(t.videoId)}" target="_blank"
-              class="w-6 h-6 rounded bg-gray-800 text-gray-500 text-[10px] flex items-center justify-center flex-none"
-              title="no cached snippet — open on YouTube Music">↗</a>`;
-    return `<div class="flex items-center gap-2 py-0.5">
-        ${play}
-        <span class="truncate ${tone}" title="${esc(label)}">${esc(label)}</span>
-        <span class="ml-auto tabular-nums text-gray-600 flex-none">${t.similarity.toFixed(2)}</span>
-    </div>`;
-}
+function renderReview() {
+    const o = S.overlap;
+    if (!o) return skeleton();
+    const all = o.tracks.filter(t => !gone(t));
+    const nMis = all.filter(t => t.kind === 'misfiled').length, nBor = all.length - nMis;
+    const list = reviewList();
+    const shown = list.slice(0, S.rv.shown);
+    const opts = (any, names, value) => `<option value="">${any}</option>` + names.map(n => `<option value="${esc(n)}" ${value === n ? 'selected' : ''}>${esc(parts(n).code)} · ${esc(parts(n).label)}</option>`).join('');
+    const names = o.playlists.slice().sort(byNumber);
+    const kindBtn = (k, label, n) => `<button data-act="rvkind" data-k="${k}" class="chip ${S.rv.kind === k ? 'chip-accent' : 'chip-mute'} !px-3 !py-1">${label} <span class="opacity-60 num">${n}</span></button>`;
 
-async function loadTypical() {
-    const el = document.getElementById('typical');
-    let d;
-    try { d = await (await fetch('/api/sort/typical')).json(); }
-    catch (e) { el.textContent = 'Could not load.'; return; }
-    const names = Object.keys(d.playlists || {}).sort();
-    if (!names.length) { el.textContent = 'Nothing embedded yet.'; return; }
-    el.innerHTML = names.map(name => {
-        const p = d.playlists[name];
-        return `<div class="border-t border-gray-800 py-3 first:border-t-0">
-            <div class="flex items-center justify-between mb-1">
-                <span class="text-gray-200 font-medium">${esc(name)}</span>
-                <span class="text-[11px] text-gray-600 tabular-nums">${p.count} tracks · cohesion ${p.cohesion.toFixed(2)}</span>
-            </div>
-            <div class="grid md:grid-cols-2 gap-x-6">
-                <div>
-                    <div class="text-[10px] uppercase tracking-wide text-gray-600 mb-1">most typical</div>
-                    ${p.typical.map(t => trackRow(t, 'text-gray-300')).join('')}
-                </div>
-                <div>
-                    <div class="text-[10px] uppercase tracking-wide text-gray-600 mb-1">least typical</div>
-                    ${p.atypical.map(t => trackRow(t, 'text-gray-500')).join('')}
-                </div>
-            </div>
+    const rows = shown.map((t, i) => {
+        const w = Math.min(100, Math.abs(t.margin) / 0.15 * 100);
+        return `<div class="flex items-center gap-3 px-4 py-2.5 border-t border-gray-800/70 hover:bg-gray-800/30">
+            ${playBtn(t)}
+            <div class="min-w-0 flex-1">
+                <div class="text-[13px] text-gray-100 truncate" title="${esc((t.artist || '?') + ' — ' + (t.title || '?'))}">${esc(t.title || '?')}</div>
+                <div class="text-[11px] text-gray-500 truncate">${esc(t.artist || '?')}</div></div>
+            <div class="hidden md:flex items-center gap-2 text-[11px] flex-none w-[19rem]">
+                <span class="chip chip-mute truncate max-w-[8.5rem]" title="${esc(t.current)}">${esc(parts(t.current).label)}</span>
+                <span class="${t.kind === 'misfiled' ? 'text-amber-400' : 'text-gray-600'}">→</span>
+                <span class="chip ${t.kind === 'misfiled' ? 'chip-warn' : 'chip-info'} truncate max-w-[8.5rem]" title="${esc(t.other)}">${esc(parts(t.other).label)}</span></div>
+            <div class="hidden sm:block w-20 flex-none" data-tip="Sounds <b>${t.own.toFixed(2)}</b> like ${esc(parts(t.current).label)} and <b>${t.other_sim.toFixed(2)}</b> like ${esc(parts(t.other).label)}">
+                <div class="bar"><i style="width:${w}%;background:${t.kind === 'misfiled' ? '#f59e0b' : '#38bdf8'}"></i></div>
+                <div class="text-[10px] text-gray-600 text-center mt-0.5">${t.kind === 'misfiled' ? 'misfiled' : 'on the border'}</div></div>
+            <div class="flex gap-1.5 flex-none">
+                <button class="btn btn-primary" data-act="move" data-v="${esc(t.videoId)}" data-cur="${esc(t.current)}" title="Move to ${esc(t.other)}">Move</button>
+                <button class="btn btn-ghost" data-act="dismiss" data-v="${esc(t.videoId)}" data-cur="${esc(t.current)}" title="It belongs where it is" aria-label="Dismiss">✕</button></div>
         </div>`;
     }).join('');
+
+    return section('Tracks worth a second look', 'Sorted by how clearly they sound like somewhere else.', `
+        ${S.movesMade ? `<div class="rounded-lg px-3 py-2 mb-3 text-xs flex items-center gap-3" style="background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.25)">
+            <span>${plural(S.movesMade, 'move')} made. The map and pair numbers refresh on demand.</span>
+            <button class="btn ml-auto" data-act="refresh">Refresh analysis</button></div>` : ''}
+        ${S.rv.pair ? `<div class="flex items-center gap-2 mb-3 text-xs"><span class="chip chip-accent">Pair</span>
+            <span class="text-gray-200">${esc(parts(S.rv.pair[0]).label)} ↔ ${esc(parts(S.rv.pair[1]).label)}</span>
+            <button class="btn btn-ghost" data-act="clearpair">Clear ✕</button></div>` : ''}
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+            ${kindBtn('misfiled', 'Misfiled', nMis)}${kindBtn('border', 'On the border', nBor)}${kindBtn('all', 'All', all.length)}
+            <input class="field w-44 ml-auto" data-act="rvq" placeholder="Search tracks" value="${esc(S.rv.q)}" aria-label="Search tracks">
+            <select class="field" data-act="rvcur" aria-label="From playlist">${opts('From: any', names, S.rv.current)}</select>
+            <select class="field" data-act="rvoth" aria-label="Toward playlist">${opts('Toward: any', names, S.rv.other)}</select>
+        </div>
+        <div class="rounded-xl border border-gray-800 overflow-hidden -mx-1">
+            ${rows || `<div class="text-center text-sm text-gray-500 py-10">${all.length ? 'Nothing matches these filters.' : 'No tracks to review. Everything sounds at home.'}</div>`}
+        </div>
+        ${list.length > shown.length ? `<div class="text-center mt-4"><button class="btn" data-act="more">Show ${Math.min(40, list.length - shown.length)} more <span class="text-gray-500">(${list.length - shown.length} left)</span></button></div>` : ''}
+        ${help('<b class="text-gray-400">Misfiled</b>: sounds closer to another playlist than to its own. <b class="text-gray-400">On the border</b>: nearly a tie. These are hypotheses from audio alone; if a track sits somewhere for a reason the model can\'t hear, dismiss it and it stays hidden. Moving changes your YouTube Music playlist right away; Undo moves it back.')}`);
 }
 
-load();
+// ── Splits ────────────────────────────────────────────────────────────
+// Any cloud of points splits into two clusters, so an absolute separation
+// means little: the baseline depends on the embedding. A playlist is flagged
+// only when it splits much more cleanly than the typical playlist in this
+// library, and neither side is a handful of outliers.
+function splitVerdict(s) {
+    const scores = Object.values(S.overlap.splits).map(x => x.score).sort((a, b) => a - b);
+    const median = scores[Math.floor(scores.length / 2)] || 1e-9;
+    const ratio = s.score / median;
+    if (ratio >= 1.6 && s.balance >= 0.2) return ['chip-warn', 'Likely two'];
+    if (ratio >= 1.25 && s.balance >= 0.15) return ['chip-info', 'Maybe two'];
+    return ['chip-ok', 'One sound'];
+}
+function topSplit() {
+    if (!S.overlap || !S.overlap.splits) return null;
+    const e = Object.entries(S.overlap.splits).sort((a, b) => b[1].score - a[1].score)[0];
+    return e && splitVerdict(e[1])[1] === 'Likely two' ? e : null;
+}
+const CLUSTER_COLORS = ['#818cf8', '#f59e0b'];
+
+function renderSplits() {
+    const o = S.overlap;
+    if (!o) return skeleton();
+    const entries = Object.entries(o.splits || {}).sort((a, b) => b[1].score - a[1].score);
+    if (!entries.length) return empty('No playlist is big enough to split', 'A playlist needs about 20 embedded tracks before two clusters mean anything.');
+    if (!S.splitSel) S.splitSel = entries[0][0];
+    const maxScore = Math.max(...entries.map(e => e[1].score), 0.001);
+
+    const list = entries.map(([name, s]) => {
+        const [cls, label] = splitVerdict(s), on = name === S.splitSel;
+        return `<button data-act="split" data-name="${esc(name)}" class="w-full text-left p-3 rounded-xl border ${on ? 'border-indigo-500/70 bg-indigo-500/5' : 'border-gray-800 hover:bg-gray-800/40'} transition-colors">
+            <div class="flex items-center gap-2"><span class="text-[13px] text-gray-100 font-medium truncate">${esc(parts(name).label)}</span><span class="chip ${cls} ml-auto">${label}</span></div>
+            <div class="flex items-center gap-2 mt-2"><div class="bar flex-1"><i style="width:${s.score / maxScore * 100}%;background:#818cf8"></i></div>
+            <span class="text-[11px] text-gray-500 num w-24 text-right">${s.sizes[0]} / ${s.sizes[1]} tracks</span></div></button>`;
+    }).join('');
+
+    return `<div class="grid lg:grid-cols-[320px_1fr] gap-5">
+        <div class="card p-4 lg:max-h-[78vh] lg:overflow-y-auto">
+            <div class="eyebrow mb-1">Playlists by split strength</div>
+            <div class="text-[11px] text-gray-500 mb-3">Two-means clustering inside each playlist.</div>
+            <div class="space-y-2">${list}</div></div>
+        <div id="split-detail" class="min-w-0">${skeleton()}</div></div>
+        ${help('Strength is how far apart the two clusters are, weighted by how even they are: a 98/2 split is outliers, not a second playlist. Labels compare each playlist with your other playlists, not with a fixed bar, so some libraries have none flagged. Look at the plot and listen to both sides before deciding.')}`;
+}
+
+async function loadSplitDetail() {
+    const name = S.splitSel, el = $('split-detail');
+    if (!el) return;
+    if (!S.splitDetail[name]) {
+        try { S.splitDetail[name] = await (await fetch('/api/sort/split?playlist=' + encodeURIComponent(name))).json(); }
+        catch (e) { el.innerHTML = empty('Could not load', 'Try again in a moment.'); return; }
+    }
+    if (S.splitSel !== name || !$('split-detail')) return;
+    const d = S.splitDetail[name], s = S.overlap.splits[name], [cls, label] = splitVerdict(s);
+    if (d.error) { el.innerHTML = empty('Could not load', esc(d.error)); return; }
+    el.innerHTML = `<div class="card p-5">
+        <div class="flex flex-wrap items-center gap-2 mb-1"><h2 class="text-sm font-semibold text-white">${esc(name)}</h2><span class="chip ${cls}">${label}</span></div>
+        <div class="text-[12px] text-gray-500 mb-3">${s.tracks} tracks · clusters ${s.separation.toFixed(2)} apart · smaller side holds ${pct(s.balance)}</div>
+        <canvas id="scatter" class="w-full rounded-xl" style="height:320px;background:#0b1220;border:1px solid #1f2937" role="img"
+            aria-label="Scatter plot of the playlist's tracks in two clusters"></canvas>
+        <div class="text-[11px] text-gray-600 mt-1.5">Each dot is a track, placed by the two directions this playlist varies most in. Hover to identify, click to play.</div>
+        <div class="grid sm:grid-cols-2 gap-4 mt-4">${d.clusters.map(c => `
+            <div class="rounded-xl border border-gray-800 p-3.5">
+                <div class="flex items-center gap-2 mb-2"><i class="w-2.5 h-2.5 rounded-full" style="background:${CLUSTER_COLORS[c.id]}"></i>
+                    <span class="text-xs font-semibold text-gray-200">Cluster ${c.id ? 'B' : 'A'}</span>
+                    <span class="text-[11px] text-gray-500 ml-auto num">${c.size} tracks · cohesion ${c.cohesion.toFixed(2)}</span></div>
+                <div class="eyebrow mb-1">Most typical</div>
+                ${c.examples.map(t => `<div class="flex items-center gap-2 py-1">${playBtn(t)}<span class="text-xs text-gray-300 truncate" title="${esc((t.artist || '?') + ' — ' + (t.title || '?'))}">${esc(t.artist || '?')} — ${esc(t.title || '?')}</span></div>`).join('')}
+            </div>`).join('')}</div>
+    </div>`;
+    drawScatter(d.points);
+}
+
+function drawScatter(points) {
+    const cv = $('scatter');
+    if (!cv) return;
+    const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+    const xs = points.map(p => p.x), ys = points.map(p => p.y), pad = 22;
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const sx = x => pad + (x - x0) / ((x1 - x0) || 1) * (W - 2 * pad);
+    const sy = y => H - pad - (y - y0) / ((y1 - y0) || 1) * (H - 2 * pad);
+    const pts = points.map(p => ({...p, px: sx(p.x), py: sy(p.y)}));
+    const paint = hover => {
+        ctx.clearRect(0, 0, W, H);
+        for (const p of pts) {
+            ctx.beginPath(); ctx.arc(p.px, p.py, p === hover ? 6 : 3.6, 0, 7);
+            ctx.fillStyle = CLUSTER_COLORS[p.c] + (p === hover ? 'ff' : 'b3'); ctx.fill();
+            if (p === hover) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); }
+        }
+    };
+    const near = e => {
+        const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+        let best = null, bd = 144;
+        for (const p of pts) { const d = (p.px - mx) ** 2 + (p.py - my) ** 2; if (d < bd) { bd = d; best = p; } }
+        return best;
+    };
+    paint(null);
+    cv.onmousemove = e => { const p = near(e); paint(p); cv.style.cursor = p ? 'pointer' : 'default';
+        p ? showTip(e, esc(p.label)) : hideTip(); };
+    cv.onmouseleave = () => { paint(null); hideTip(); };
+    cv.onclick = e => { const p = near(e); if (p) play(p.videoId, p.label); };
+}
+
+// ── Sound ─────────────────────────────────────────────────────────────
+function renderSound() {
+    if (!S.typical) return skeleton();
+    const names = Object.keys(S.typical.playlists || {}).sort(byNumber);
+    if (!names.length) return empty('Nothing embedded yet', 'Once tracks are embedded, each playlist\'s most and least typical tracks show up here.');
+    const q = S.soundQ.trim().toLowerCase();
+    const row = (t, tone) => `<div class="flex items-center gap-2 py-1">${playBtn(t)}
+        <span class="truncate text-xs ${tone}" title="${esc((t.artist || '?') + ' — ' + (t.title || '?'))}">${esc(t.artist || '?')} — ${esc(t.title || '?')}</span>
+        <span class="ml-auto num text-[11px] text-gray-600 flex-none">${t.similarity.toFixed(2)}</span></div>`;
+    const cards = names.filter(n => !q || n.toLowerCase().includes(q)).map(n => {
+        const p = S.typical.playlists[n];
+        const tone = p.cohesion >= 0.85 ? '#34d399' : p.cohesion >= 0.75 ? '#818cf8' : '#f59e0b';
+        return `<details class="rounded-xl border border-gray-800 hover:border-gray-700">
+            <summary class="flex items-center gap-3 px-4 py-3">
+                <span class="caret text-xs">▸</span>
+                <span class="text-[13px] text-gray-100 font-medium truncate flex-1">${esc(n)}</span>
+                <span class="text-[11px] text-gray-500 num flex-none hidden sm:inline">${p.count} tracks</span>
+                <div class="w-24 flex-none" data-tip="Cohesion ${p.cohesion.toFixed(2)}: average similarity to the playlist's centre"><div class="bar"><i style="width:${Math.max(0, (p.cohesion - 0.3) / 0.7) * 100}%;background:${tone}"></i></div></div>
+                <span class="num text-xs text-gray-300 w-9 text-right flex-none">${p.cohesion.toFixed(2)}</span></summary>
+            <div class="grid md:grid-cols-2 gap-x-8 px-4 pb-3 pt-1 border-t border-gray-800">
+                <div><div class="eyebrow my-1.5">Most typical</div>${p.typical.map(t => row(t, 'text-gray-200')).join('')}</div>
+                <div><div class="eyebrow my-1.5">Least typical</div>${p.atypical.map(t => row(t, 'text-gray-500')).join('')}</div>
+            </div></details>`;
+    }).join('');
+    return section('What each playlist sounds like', 'The tracks closest to and furthest from each playlist\'s centre.', `
+        <input class="field w-60 mb-3" data-act="soundq" placeholder="Search playlists" value="${esc(S.soundQ)}" aria-label="Search playlists">
+        <div class="space-y-2">${cards || '<div class="text-xs text-gray-500 py-6 text-center">No playlists match.</div>'}</div>
+        ${help('Cohesion is the average similarity to the playlist\'s centre. Low numbers mean the model hears several things; the Splits tab shows whether they separate cleanly.')}`);
+}
+
+// ── Shell: tabs, routing, rendering ───────────────────────────────────
+function renderTabs() {
+    const badge = {review: S.overlap ? S.overlap.tracks.filter(t => t.kind === 'misfiled' && !gone(t)).length : 0};
+    $('tabs').innerHTML = TABS.map(([id, label]) => `<button class="tab" role="tab" id="tab-${id}" data-act="tab" data-id="${id}"
+        aria-selected="${S.tab === id}" tabindex="${S.tab === id ? 0 : -1}">${label}${badge[id] ? ` <span class="chip chip-warn ml-1 !px-1.5">${badge[id]}</span>` : ''}</button>`).join('');
+}
+
+function render() {
+    renderTabs();
+    const view = $('view');
+    if (!S.stats) { view.innerHTML = skeleton(); return; }
+    view.setAttribute('role', 'tabpanel'); view.setAttribute('aria-labelledby', 'tab-' + S.tab);
+    const scroll = scrollY;
+    view.innerHTML = {overview: renderOverview, playlists: renderPlaylists, overlap: renderOverlap,
+                      review: renderReview, splits: renderSplits, sound: renderSound}[S.tab]();
+    if (S.tab === 'splits') loadSplitDetail();
+    scrollTo(0, scroll);
+}
+
+function go(tab, keepScroll) {
+    S.tab = tab;
+    try { history.replaceState(null, '', '#' + tab); } catch (e) {}
+    render();
+    if (!keepScroll) scrollTo(0, 0);
+}
+
+async function loadOverlap() {
+    try {
+        S.overlap = await (await fetch('/api/sort/overlap')).json();
+        S.splitDetail = {};
+    } catch (e) { S.overlap = {playlists: [], stats: {}, matrix: {}, pairs: [], tracks: [], splits: {}}; }
+    render();
+}
+
+async function move(videoId, current, target, rec, label) {
+    const r = await fetch('/api/sort/remodel/move', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({videoId, current, target, artist: rec.artist, title: rec.title})});
+    if (!r.ok) { const e = await r.json().catch(() => ({})); toast('Move failed: ' + esc(e.error || r.status)); return false; }
+    return true;
+}
+
+// ── Events (one delegated listener) ───────────────────────────────────
+document.addEventListener('click', async e => {
+    const el = e.target.closest('[data-act]');
+    if (!el) return;
+    const act = el.dataset.act, d = el.dataset;
+    switch (act) {
+        case 'tab': go(d.id); break;
+        case 'goto': {
+            const t = S._todo[+d.i];
+            if (t.filter) { S.plFilter = t.filter; }
+            if (t.focus) S.focus = t.focus;
+            if (t.split) S.splitSel = t.split;
+            if (t.tab) go(t.tab);
+            break; }
+        case 'play': play(d.id, d.label); break;
+        case 'stop': $('audio').pause(); $('player').classList.add('hidden'); break;
+        case 'sort':
+            S.plSort = {key: d.key, dir: S.plSort.key === d.key ? -S.plSort.dir : (d.key === 'playlist' ? 1 : -1)};
+            render(); break;
+        case 'plfilter': S.plFilter = d.k; render(); break;
+        case 'focus': S.focus = d.name; go('overlap'); break;
+        case 'unfocus': S.focus = null; render(); break;
+        case 'heatorder': S.heatOrder = d.k; render(); break;
+        case 'cell':
+            if (d.r === d.c) { S.focus = d.r; render(); break; }
+            S.rv = {kind: 'all', current: d.r, other: d.c, q: '', shown: 40}; go('review'); break;
+        case 'pair-review': {
+            const p = S._pairs[+d.i];
+            S.rv = {kind: 'all', current: '', other: '', q: '', shown: 40, pair: [p.a, p.b]}; go('review'); break; }
+        case 'rvkind': S.rv.kind = d.k; S.rv.shown = 40; render(); break;
+        case 'clearpair': S.rv.pair = null; render(); break;
+        case 'more': S.rv.shown += 40; render(); break;
+        case 'dismiss': {
+            S.dismissed.add(d.v + '|' + d.cur); store.set('dismissed', [...S.dismissed]);
+            render(); break; }
+        case 'move': {
+            const t = S.overlap.tracks.find(x => x.videoId === d.v && x.current === d.cur);
+            el.disabled = true;
+            if (!await move(t.videoId, t.current, t.other, t)) { el.disabled = false; break; }
+            S.moved.add(tkey(t)); S.movesMade++; render();
+            toast(`Moved to <b>${esc(parts(t.other).label)}</b>`, async () => {
+                if (await move(t.videoId, t.other, t.current, t)) {
+                    S.moved.delete(tkey(t)); S.movesMade = Math.max(0, S.movesMade - 1); render(); toast('Moved back.');
+                }
+            });
+            break; }
+        case 'undo': { const f = $('toast')._undo; $('toast').style.display = 'none'; if (f) f(); break; }
+        case 'refresh': S.movesMade = 0; S.overlap = null; render(); loadOverlap(); break;
+        case 'split': S.splitSel = d.name; render(); break;
+    }
+});
+document.addEventListener('input', e => {
+    const act = e.target.dataset && e.target.dataset.act;
+    const keep = () => { const pos = e.target.selectionStart; render(); const n = document.querySelector(`[data-act="${act}"]`); if (n) { n.focus(); n.setSelectionRange(pos, pos); } };
+    if (act === 'plq') { S.plQ = e.target.value; keep(); }
+    else if (act === 'rvq') { S.rv.q = e.target.value; S.rv.shown = 40; keep(); }
+    else if (act === 'soundq') { S.soundQ = e.target.value; keep(); }
+});
+document.addEventListener('change', e => {
+    const act = e.target.dataset && e.target.dataset.act;
+    if (act === 'rvcur') { S.rv.current = e.target.value; S.rv.pair = null; S.rv.shown = 40; render(); }
+    if (act === 'rvoth') { S.rv.other = e.target.value; S.rv.pair = null; S.rv.shown = 40; render(); }
+});
+document.addEventListener('mouseover', e => {
+    const el = e.target.closest('[data-tip]');
+    if (el) showTip(e, el.dataset.tip); else if (e.target.id !== 'scatter') hideTip();
+});
+document.addEventListener('mousemove', e => { if (tip.style.display === 'block' && e.target.closest('[data-tip]')) showTip(e, e.target.closest('[data-tip]').dataset.tip); });
+document.addEventListener('keydown', e => {
+    // Arrow keys move between tabs when one has focus, as a tablist should.
+    if (!e.target.classList || !e.target.classList.contains('tab')) return;
+    const i = TABS.findIndex(t => t[0] === S.tab);
+    const n = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : null;
+    if (n === null) return;
+    go(TABS[(n + TABS.length) % TABS.length][0]);
+    $('tab-' + S.tab).focus();
+});
+window.addEventListener('resize', () => { if (S.tab === 'splits' && S.splitDetail[S.splitSel]) drawScatter(S.splitDetail[S.splitSel].points); });
+
+// ── Boot ──────────────────────────────────────────────────────────────
+(async function boot() {
+    const h = location.hash.slice(1);
+    if (TABS.some(t => t[0] === h)) S.tab = h;
+    render();
+    try { S.stats = await (await fetch('/api/sort/stats')).json(); }
+    catch (e) { $('view').innerHTML = empty('Could not load stats', 'The server did not answer. Reload to retry.'); return; }
+    render();
+    loadOverlap();
+    try { S.typical = await (await fetch('/api/sort/typical')).json(); } catch (e) { S.typical = {playlists: {}}; }
+    if (S.tab === 'sound') render();
+})();
 </script>
 </body>
 </html>

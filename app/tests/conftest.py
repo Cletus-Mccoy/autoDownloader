@@ -58,6 +58,7 @@ def flask_app(data_dir, monkeypatch, tmp_path):
     monkeypatch.setattr(flask_module, "DUPES_DECISIONS_FILE",   str(vibe_dir / "dupes_decisions.json"))
     monkeypatch.setattr(flask_module, "REMOVALS_LEDGER_FILE",   str(vibe_dir / "reports" / "removals.jsonl"))
     flask_module._typical_cache.update(key=None, value=None)
+    flask_module._overlap_cache.update(key=None, value=None, vectors=None)
 
     # Also patch ytmusic_auth's constants — the /auth/status route imports
     # has_oauth/has_headers from there, which read these paths directly.
