@@ -27,6 +27,13 @@ from .typical import _single_label
 # A track whose best other playlist is within this of its own is "on the
 # border": a different random seed of the same library could flip it.
 BORDER = 0.03
+# A track is "misfiled" only when another playlist beats its own by at least
+# this much. Chosen from the real library, where nearest-centroid margins have
+# no natural gap: -0.02 flagged 800 tracks and -0.05 flagged 379, too many to
+# triage, while -0.08 leaves ~200 and the strongest of those were clear genre
+# crossovers. Everything between this and BORDER is a judgement call for the
+# curator, so it is reported as "border", not as a mistake.
+MISFILED = 0.08
 # Playlists below this are too small for a centroid to mean anything.
 MIN_TRACKS = 5
 # Split analysis needs enough tracks for two clusters to each be a playlist.
@@ -129,7 +136,7 @@ def analyse(lib, vectors, exclude=()):
                 "other": names[best_other_idx[t]],
                 "other_sim": round(float(best_other[t]), 3),
                 "margin": round(float(margin[t]), 3),
-                "kind": "misfiled" if margin[t] < 0 else "border",
+                "kind": "misfiled" if margin[t] <= -MISFILED else "border",
             })
 
     matrix = counts / sizes[:, None]

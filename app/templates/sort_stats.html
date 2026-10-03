@@ -223,7 +223,7 @@ function attentionItems() {
             body: `${pct(hot.a_to_b)} of one and ${pct(hot.b_to_a)} of the other sound like the neighbour. See the Overlap tab.`});
         const mis = o.tracks.filter(t => t.kind === 'misfiled' && !gone(t)).length;
         if (mis) items.push({tab: 'review', tone: 'info',
-            title: `${plural(mis, 'track')} sound closer to another playlist`,
+            title: `${plural(mis, 'track')} clearly sound like another playlist`,
             body: 'Move them, or dismiss the ones that are right where they are.'});
         const split = topSplit();
         if (split) items.push({tab: 'splits', split: split[0], tone: 'info',
@@ -536,7 +536,7 @@ function renderReview() {
             ${rows || `<div class="text-center text-sm text-gray-500 py-10">${all.length ? 'Nothing matches these filters.' : 'No tracks to review. Everything sounds at home.'}</div>`}
         </div>
         ${list.length > shown.length ? `<div class="text-center mt-4"><button class="btn" data-act="more">Show ${Math.min(40, list.length - shown.length)} more <span class="text-gray-500">(${list.length - shown.length} left)</span></button></div>` : ''}
-        ${help('<b class="text-gray-400">Misfiled</b>: sounds closer to another playlist than to its own. <b class="text-gray-400">On the border</b>: nearly a tie. These are hypotheses from audio alone; if a track sits somewhere for a reason the model can\'t hear, dismiss it and it stays hidden. Moving changes your YouTube Music playlist right away; Undo moves it back.')}`);
+        ${help('<b class="text-gray-400">Misfiled</b>: sounds clearly closer to another playlist than to its own, the strongest cases. <b class="text-gray-400">On the border</b>: a tie or a narrow miss, so many of these are fine where they are. These are hypotheses from audio alone; if a track sits somewhere for a reason the model can\'t hear, dismiss it and it stays hidden. Moving changes your YouTube Music playlist right away; Undo moves it back.')}`);
 }
 
 // ── Splits ────────────────────────────────────────────────────────────

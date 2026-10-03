@@ -64,6 +64,19 @@ def test_a_track_in_the_wrong_playlist_is_flagged_misfiled():
     assert stray["margin"] < 0
 
 
+def test_a_small_negative_margin_is_border_not_misfiled(monkeypatch):
+    """Nearer elsewhere by a hair is a judgement call, not a mistake."""
+    rng = np.random.default_rng(1)
+    lib, vectors = _library(rng)
+    lib["playlists"][0]["tracks"].append({"videoId": "stray", "title": "stray",
+                                           "artist": "x"})
+    vectors["stray"] = _cloud(rng, 3, 1)[0]
+    monkeypatch.setattr(overlap, "MISFILED", 10.0)   # nothing can clear it
+    stray = next(t for t in overlap.analyse(lib, vectors)["tracks"]
+                 if t["videoId"] == "stray")
+    assert stray["margin"] < 0 and stray["kind"] == "border"
+
+
 def test_own_centroid_is_computed_without_the_track():
     """Two-track playlists would look perfect if the track voted for itself."""
     vectors = {"a1": [1, 0], "a2": [1, 0], "a3": [1, 0], "a4": [1, 0],
