@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY ./app.py /app/app.py
+COPY ./musiclib_api.py /app/musiclib_api.py
 # Whole directory, not index.html alone — the sorter's page lives here too and
 # naming files one by one silently 404s anything new.
 COPY ./templates/ /app/templates
@@ -28,7 +29,7 @@ COPY ./scripts/ /app/scripts
 COPY ./tests/ /app/tests
 COPY ./pytest.ini /app/pytest.ini
 
-RUN mkdir -p /app/data/auth /app/data/logs /app/downloads
+RUN mkdir -p /app/data/auth /app/data/logs /app/downloads /app/music
 
 COPY ./requirements.txt /app/requirements.txt
 COPY ./requirements-vibe.txt /app/requirements-vibe.txt

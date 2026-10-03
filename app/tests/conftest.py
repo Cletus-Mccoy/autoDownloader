@@ -34,6 +34,7 @@ def flask_app(data_dir, monkeypatch, tmp_path):
     monkeypatch.setattr(flask_module, "DATA_DIR",          str(data_dir))
     monkeypatch.setattr(flask_module, "RUNS_FILE",         str(data_dir / "runs.json"))
     monkeypatch.setattr(flask_module, "DOWNLOAD_DIR",      str(data_dir / "downloads"))
+    monkeypatch.setattr(flask_module, "MUSIC_DIR",         str(tmp_path / "music"))
     monkeypatch.setattr(flask_module, "LOG_DIR",           str(data_dir / "logs"))
     monkeypatch.setattr(flask_module, "AUTH_DIR",          auth_dir)
     monkeypatch.setattr(flask_module, "HEADERS_AUTH_FILE", headers_file)

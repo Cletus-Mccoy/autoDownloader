@@ -23,12 +23,15 @@ if _SCRIPTS_DIR not in sys.path:
 from scripts.timer import get_next_run_safe
 from scripts.runner import run_scheduler_stream
 from scripts.scheduler import log_run as _cron_log_run
+from scripts.musiclib import default_library
+from musiclib_api import bp as musiclib_bp
 
 app = Flask(__name__)
 
 DATA_DIR = "/app/data"
 RUNS_FILE = f"{DATA_DIR}/runs.json"
 DOWNLOAD_DIR = "/app/downloads"
+MUSIC_DIR = "/app/music"
 LOG_DIR = f"{DATA_DIR}/logs"
 AUTH_DIR = f"{DATA_DIR}/auth"
 HEADERS_AUTH_FILE = f"{AUTH_DIR}/headers_auth.json"
@@ -65,6 +68,21 @@ DUPES_DECISIONS_FILE   = f"{VIBE_DIR}/dupes_decisions.json"
 REMOVALS_LEDGER_FILE   = f"{VIBE_DIR}/reports/removals.jsonl"
 MUSIC_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".aac", ".wma"}
 UNSUPPORTED_TITLES = {"Liked Music", "Episodes for Later"}
+
+
+def _done(**payload):
+    """JSON for the player UI (fetch sends X-Requested-With), redirect for the legacy dashboard forms."""
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify({"ok": True, **payload})
+    return redirect("/downloads")
+
+
+def get_library():
+    return default_library(DATA_DIR, DOWNLOAD_DIR, MUSIC_DIR)
+
+
+app.config["get_library"] = get_library
+app.register_blueprint(musiclib_bp)
 
 
 def _persist_run(status, log_file, trigger="manual"):
@@ -111,6 +129,11 @@ def load_runs():
 
 
 @app.route("/")
+def player():
+    return render_template("player.html")
+
+
+@app.route("/downloads")
 def index():
     runs = load_runs()
     next_run, delta = get_next_run_safe()
@@ -183,7 +206,7 @@ def run_stream():
     return Response(run_scheduler_stream(), mimetype="text/event-stream")
 
 
-def run_target():
+def run_target(extra_args=()):
     global run_active, _current_proc
     run_active = True
     ts = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -193,7 +216,7 @@ def run_target():
         os.makedirs(LOG_DIR, exist_ok=True)
         with open(log_file, "w") as lf:
             _current_proc = subprocess.Popen(
-                [sys.executable, "/app/scripts/download.py"],
+                [sys.executable, "/app/scripts/download.py", *extra_args],
                 stdout=lf, stderr=lf
             )
             _current_proc.wait()
@@ -220,19 +243,39 @@ def run_target():
                 pass
         _current_proc = None
         run_active = False
+        try:
+            get_library().scan_async()
+        except Exception:
+            pass
 
-@app.route("/run-now", methods=["POST"])
-def run_now():
+def _start_run(extra_args=()):
+    """Start a download run in the background. Returns False if one is already running."""
     global run_thread
     if run_lock.locked() or (run_thread and run_thread.is_alive()):
-        return redirect("/")
-    run_thread = threading.Thread(target=run_target, daemon=True)
+        return False
+    run_thread = threading.Thread(target=run_target, args=(extra_args,), daemon=True)
     run_lock.acquire()
     try:
         run_thread.start()
     finally:
         run_lock.release()
-    return redirect("/")
+    return True
+
+
+@app.route("/run-now", methods=["POST"])
+def run_now():
+    return _done(started=_start_run())
+
+
+@app.route("/api/download-url", methods=["POST"])
+def download_url():
+    url = ((request.get_json(silent=True) or {}).get("url") or "").strip()
+    if not re.match(r"^https?://\S+$", url):
+        return jsonify({"error": "Enter a valid http(s) URL"}), 400
+    if not _start_run(("--url", url)):
+        return jsonify({"error": "A download is already running"}), 409
+    return jsonify({"ok": True, "started": True}), 202
+
 
 @app.route("/stop-now", methods=["POST"])
 def stop_now():
@@ -240,7 +283,7 @@ def stop_now():
     run_active = False
     if _current_proc and _current_proc.poll() is None:
         _current_proc.terminate()
-    return redirect("/")
+    return _done()
 
 @app.route("/download-status", methods=["GET"])
 def download_status():
@@ -254,19 +297,19 @@ def download_status():
 def clear_runs():
     with open(RUNS_FILE, "w") as f:
         json.dump([], f)
-    return redirect("/")
+    return redirect("/downloads")
 
 @app.route("/clear-logs", methods=["POST"])
 def clear_logs():
     for f in os.listdir(LOG_DIR):
         os.remove(os.path.join(LOG_DIR, f))
-    return redirect("/")
+    return redirect("/downloads")
 
 @app.route("/clear-downloads", methods=["POST"])
 def clear_downloads():
     shutil.rmtree(DOWNLOAD_DIR, ignore_errors=True)
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-    return redirect("/")
+    return redirect("/downloads")
 
 @app.route("/auth/status")
 def auth_status():
@@ -333,7 +376,7 @@ def auth_headers():
         setup(filepath=HEADERS_AUTH_FILE, headers_raw=_normalize_headers_raw(headers_raw))
     except Exception as e:
         return f"Failed to parse headers: {e}", 400
-    return redirect("/")
+    return _done()
 
 
 @app.route("/auth/revoke", methods=["POST"])
@@ -341,7 +384,7 @@ def auth_revoke():
     for path in (HEADERS_AUTH_FILE, OAUTH_FILE, OAUTH_CLIENT_FILE):
         if os.path.exists(path):
             os.remove(path)
-    return redirect("/")
+    return _done()
 
 
 @app.route("/auth/oauth/setup", methods=["POST"])
@@ -468,6 +511,11 @@ def api_playlists():
         from scripts.ytmusic_auth import headers_to_ytmusic
         ytmusic = headers_to_ytmusic()
         raw = ytmusic.get_library_playlists(limit=200)
+        if not raw:
+            try:
+                ytmusic.get_account_info()      # signed-out sessions list nothing without erroring
+            except Exception:
+                return jsonify({"error": "YouTube does not recognise this session; re-copy fresh headers"}), 401
         playlists = []
         for pl in raw:
             pid   = pl.get("playlistId")
@@ -1463,4 +1511,8 @@ if __name__ == "__main__":
     restored = ensure_cron()
     if restored:
         print(f"[cron] schedule active: {restored}")
+    try:
+        get_library().scan_async()
+    except Exception as e:
+        print(f"[library] startup scan failed: {e}")
     app.run(host="0.0.0.0", port=8080)

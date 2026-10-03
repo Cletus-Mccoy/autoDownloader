@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Player</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #111827; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+        .nav-btn { display:flex; align-items:center; gap:10px; width:100%; padding:8px 12px; border-radius:8px;
+                   font-size:13px; font-weight:600; color:#9ca3af; text-align:left; transition:background .1s,color .1s; }
+        .nav-btn:hover { background:rgba(255,255,255,.05); color:#f3f4f6; }
+        .nav-btn.active { background:#312e81; color:#fff; }
+        .row, .cols { display:grid; grid-template-columns: 2.5rem minmax(0,1fr) 3rem 3.5rem; gap:12px; align-items:center;
+               padding:6px 12px; border-radius:8px; }
+        .row { cursor:pointer; }
+        .cols { position:sticky; top:-16px; z-index:5; background:#0a0f1a; padding-top:8px; padding-bottom:8px;
+                border-bottom:1px solid #1f2937; border-radius:0; margin-bottom:4px; }
+        .cols .c-idx, .cols .c-art { visibility:hidden; }
+        .sort-btn { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; text-align:left; }
+        .sort-btn:hover { color:#e5e7eb; }
+        .sort-btn.on { color:#a5b4fc; }
+        .row-act { color:#6b7280; opacity:0; padding:2px 6px; border-radius:6px; }
+        .row:hover .row-act, .row-act:focus { opacity:1; }
+        .row-act:hover { color:#fff; background:rgba(255,255,255,.1); }
+        @media (hover: none) { .row-act { opacity:1; } }
+        .row:hover { background:rgba(255,255,255,.05); }
+        .row.playing { background:rgba(99,102,241,.15); }
+        .row.playing .t-title { color:#a5b4fc; }
+        .art { background:#1f2937; object-fit:cover; flex-shrink:0; }
+        .lib-tab { padding:5px 14px; border-radius:9px; font-size:13px; font-weight:600; color:#9ca3af; transition:background .12s,color .12s; }
+        .lib-tab:hover { color:#f3f4f6; }
+        .lib-tab.active { background:#312e81; color:#fff; }
+        .sort-count { font-size:10px; font-weight:600; background:#78350f; color:#fcd34d; border-radius:6px; padding:1px 6px; }
+        .home-item { display:flex; align-items:center; gap:12px; width:100%; padding:8px 10px; border-radius:12px; text-align:left; transition:background .1s; }
+        .home-item:hover { background:#1f2937; }
+        .home-h { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#6b7280; margin:0 0 6px 4px; }
+        .tbtn { width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:9999px;
+                color:#9ca3af; transition:color .12s, background .12s, transform .12s; }
+        .tbtn:hover { color:#fff; background:rgba(255,255,255,.08); }
+        .tbtn:active { transform:scale(.92); }
+        .tbtn.on { color:#818cf8; background:rgba(99,102,241,.14); }
+        .play-main { width:44px; height:44px; display:flex; align-items:center; justify-content:center; border-radius:9999px;
+                     color:#fff; background:linear-gradient(135deg,#6366f1,#8b5cf6); box-shadow:0 4px 14px rgba(99,102,241,.45);
+                     transition:transform .12s, box-shadow .12s; }
+        .play-main:hover { transform:scale(1.07); box-shadow:0 6px 18px rgba(99,102,241,.6); }
+        .play-main:active { transform:scale(.96); }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spin svg { animation: spin 1s linear infinite; }
+        .icon-btn { color:#9ca3af; padding:6px; border-radius:50%; transition:color .1s, background .1s; }
+        .icon-btn:hover { color:#fff; }
+        .icon-btn.on { color:#818cf8; }
+        input[type=range] { accent-color:#6366f1; cursor:pointer; }
+        .card { background:#111827; border:1px solid #1f2937; border-radius:12px; padding:12px; cursor:pointer;
+                transition:background .1s, border-color .1s; }
+        .card:hover { background:#1f2937; border-color:#374151; }
+        .c-idx, .c-artist, .c-album, .c-added { display:none; }
+        @media (min-width: 768px) {
+            .row, .cols { grid-template-columns: 2rem 2.5rem minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 3rem 3.5rem; }
+            .c-idx, .c-artist, .c-album { display:block; }
+            .m-artist { display:none; }
+        }
+        @media (min-width: 1024px) {
+            .row, .cols { grid-template-columns: 2rem 2.5rem minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 5.5rem 3rem 3.5rem; }
+            .c-added { display:block; }
+        }
+        .toast { position:fixed; left:50%; bottom:7rem; transform:translateX(-50%); background:#1f2937; border:1px solid #374151;
+                 padding:8px 14px; border-radius:10px; font-size:13px; z-index:60; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+    </style>
+</head>
+<body class="text-gray-100" style="background-color:#0a0f1a">
+
+<div class="flex h-screen overflow-hidden">
+    <!-- Sidebar -->
+    <aside id="sidebar" class="hidden md:flex fixed md:static inset-y-0 left-0 z-30 w-56 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex-col p-4 gap-4 pb-28">
+        <div class="flex items-center gap-2 px-2">
+            <span class="text-xl">🎵</span>
+            <h1 class="text-base font-bold tracking-tight text-white">Music</h1>
+        </div>
+        <div class="flex flex-col gap-1">
+            <button class="nav-btn" data-view="home">Home</button>
+            <button class="nav-btn" data-view="library">Library</button>
+        </div>
+        <nav class="flex flex-col gap-1">
+            <p class="px-3 text-[10px] uppercase tracking-wider text-gray-600 mb-1">Sort</p>
+            <button class="nav-btn sort-item" data-path="/sort" data-title="New likes"><span class="flex-1">New likes</span><span class="sort-count hidden" data-count="queue"></span></button>
+            <button class="nav-btn sort-item" data-path="/sort/misfiled" data-title="Misfiled"><span class="flex-1">Misfiled</span><span class="sort-count hidden" data-count="misfiled"></span></button>
+            <button class="nav-btn sort-item" data-path="/sort/duplicates" data-title="Duplicates"><span class="flex-1">Duplicates</span><span class="sort-count hidden" data-count="dupes"></span></button>
+            <button class="nav-btn sort-item" data-path="/sort/stats" data-title="Sorter stats"><span class="flex-1">Stats</span></button>
+        </nav>
+        <nav class="flex flex-col gap-1">
+            <p class="px-3 text-[10px] uppercase tracking-wider text-gray-600 mb-1">Manage</p>
+            <button class="nav-btn" data-view="downloads">Downloads</button>
+            <button class="nav-btn" data-view="media">Media</button>
+        </nav>
+        <div class="mt-auto rounded-xl bg-gray-950/60 border border-gray-800 p-2 text-xs flex items-center gap-1 flex-shrink-0">
+            <button id="stats-btn" class="min-w-0 flex-1 text-left rounded-lg px-2 py-1 hover:bg-white/5 transition-colors" title="Library stats">
+                <div id="lib-stats" class="text-gray-300 font-medium truncate">&nbsp;</div>
+                <div id="scan-msg" class="text-gray-600 truncate">&nbsp;</div>
+            </button>
+            <button id="rescan-btn" class="tbtn flex-shrink-0" title="Rescan library" aria-label="Rescan library"></button>
+        </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 flex flex-col min-w-0 pb-24">
+        <header class="flex items-center gap-3 p-4 border-b border-gray-800">
+            <button id="menu-btn" class="md:hidden icon-btn" aria-label="Menu">☰</button>
+            <h2 id="view-title" class="text-lg font-bold flex-shrink-0">Songs</h2>
+            <div id="lib-tabs" class="hidden items-center gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 flex-shrink-0">
+                <button class="lib-tab" data-tab="playlists">Playlists</button>
+                <button class="lib-tab" data-tab="songs">Songs</button>
+                <button class="lib-tab" data-tab="artists">Artists</button>
+                <button class="lib-tab" data-tab="albums">Albums</button>
+            </div>
+            <button id="back-btn" class="hidden text-xs text-indigo-400 hover:text-indigo-300 font-semibold">← Back</button>
+            <input id="search" type="search" placeholder="Search title, artist, album…"
+                   class="ml-auto w-full max-w-sm bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-sm placeholder-gray-500 focus:outline-none focus:border-indigo-500">
+        </header>
+        <div id="content" class="flex-1 overflow-y-auto p-4"></div>
+    </main>
+</div>
+
+<!-- Queue panel -->
+<aside id="queue-panel" class="hidden fixed right-0 top-0 bottom-24 w-80 max-w-full bg-gray-900 border-l border-gray-800 z-30 flex-col">
+    <div class="flex items-center justify-between p-4 border-b border-gray-800">
+        <h3 class="font-bold text-sm">Queue</h3>
+        <button id="queue-close" class="icon-btn">✕</button>
+    </div>
+    <div id="queue-list" class="flex-1 overflow-y-auto p-2"></div>
+</aside>
+
+<!-- Player bar -->
+<footer class="fixed bottom-0 inset-x-0 h-24 bg-gray-900 border-t border-gray-800 z-40 px-4 flex items-center gap-4">
+    <div class="flex items-center gap-3 w-1/4 min-w-0">
+        <div id="np-art" class="w-14 h-14 rounded art"></div>
+        <div class="min-w-0">
+            <div id="np-title" class="text-sm font-semibold truncate">Nothing playing</div>
+            <div id="np-artist" class="text-xs text-gray-400 truncate">&nbsp;</div>
+        </div>
+    </div>
+    <div class="flex-1 flex flex-col items-center gap-1 min-w-0">
+        <div class="flex items-center gap-2">
+            <button id="shuffle-btn" class="tbtn" title="Shuffle (S)" aria-label="Shuffle"></button>
+            <button id="prev-btn" class="tbtn" title="Previous (P)" aria-label="Previous"></button>
+            <button id="play-btn" class="play-main" title="Play/Pause (Space)" aria-label="Play"></button>
+            <button id="next-btn" class="tbtn" title="Next (N)" aria-label="Next"></button>
+            <button id="repeat-btn" class="tbtn" title="Repeat (R)" aria-label="Repeat"></button>
+        </div>
+        <div class="flex items-center gap-2 w-full max-w-xl text-[11px] text-gray-400">
+            <span id="t-cur" class="w-9 text-right">0:00</span>
+            <input id="seek" type="range" min="0" max="1000" value="0" class="flex-1">
+            <span id="t-dur" class="w-9">0:00</span>
+        </div>
+    </div>
+    <div class="hidden sm:flex items-center gap-2 w-1/4 justify-end">
+        <button id="queue-btn" class="tbtn" title="Queue" aria-label="Queue"></button>
+        <span id="vol-icon" class="text-gray-500"></span>
+        <input id="volume" type="range" min="0" max="100" value="80" class="w-24">
+    </div>
+</footer>
+
+<div id="stats-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 items-center justify-center p-4">
+    <div class="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-lg shadow-2xl">
+        <div class="flex items-center justify-between mb-4"><h3 class="font-bold">Library</h3><button id="stats-close" class="icon-btn" aria-label="Close">✕</button></div>
+        <div id="stats-body" class="text-sm text-gray-500">Loading…</div>
+    </div>
+</div>
+
+<audio id="audio" preload="metadata"></audio>
+
+<script>
+const $ = id => document.getElementById(id);
+const audio = $('audio');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = s => { s = Math.max(0, Math.floor(s || 0)); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
+const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const artEl = (t, cls) => t && t.has_art
+    ? `<img class="${cls} art" loading="lazy" src="/api/art/${t.id}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'${cls} art'}))">`
+    : `<div class="${cls} art"></div>`;
+
+
+// ── Icons ───────────────────────────────────────────────────────────────────
+const svg = (inner, size = 20, fill = false) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="${fill ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+const ICON = {
+    shuffle: svg('<path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="m15 15 6 6"/><path d="m4 4 5 5"/>'),
+    prev:    svg('<path d="M19 20 9 12l10-8v16Z"/><path d="M5 19V5"/>', 20, true),
+    next:    svg('<path d="m5 4 10 8-10 8V4Z"/><path d="M19 5v14"/>', 20, true),
+    play:    svg('<path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5Z"/>', 22, true),
+    pause:   svg('<rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/>', 22, true),
+    repeat:  svg('<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>'),
+    repeat1: svg('<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1.5v4"/>'),
+    queue:   svg('<path d="M3 6h13M3 12h13M3 18h8"/><path d="m17 15 5 3-5 3v-6Z"/>'),
+    volume:  svg('<path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/>', 18),
+    refresh: svg('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>', 16),
+    preview: svg('<path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5Z"/>', 14, true),
+    stop:    svg('<rect x="6" y="6" width="12" height="12" rx="1.5"/>', 14, true),
+};
+$('shuffle-btn').innerHTML = ICON.shuffle; $('prev-btn').innerHTML = ICON.prev; $('next-btn').innerHTML = ICON.next;
+$('play-btn').innerHTML = ICON.play; $('repeat-btn').innerHTML = ICON.repeat; $('queue-btn').innerHTML = ICON.queue;
+$('vol-icon').innerHTML = ICON.volume; $('rescan-btn').innerHTML = ICON.refresh;
+
+// ── State ───────────────────────────────────────────────────────────────────
+let view = 'songs';
+let filter = {};           // {credit, album} when drilled into artist/album
+let listTracks = [];       // tracks currently shown in the songs view
+let listPage = 1, listPages = 1, loading = false, reqId = 0;
+let queue = store.get('queue', []);
+let qIdx = store.get('qIdx', -1);
+let shuffle = store.get('shuffle', false);
+let repeat = store.get('repeat', 'off');   // off | all | one
+let history = [];
+let dlTimer = null;          // played queue indices (for prev in shuffle mode)
+let sortKey = store.get('sortKey', 'artist'), sortDir = store.get('sortDir', 'asc');
+let sidePlaylists = [];
+
+// ── Views ───────────────────────────────────────────────────────────────────
+function setView(v, f = {}) {
+    if (v === 'library') v = store.get('libTab', 'playlists');
+    const wasSort = view === 'sort';
+    view = v; filter = f;
+    if (wasSort && v !== 'sort') refreshSortCounts();
+    clearInterval(dlTimer);
+    $('search').classList.toggle('hidden', ['downloads', 'media', 'sort'].includes(v));
+    document.querySelectorAll('.sort-item').forEach(b => b.classList.toggle('active', v === 'sort' && f.path === b.dataset.path));
+    document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === (['songs', 'tracks', 'artists', 'albums', 'playlists', 'playlist', 'needs-tags'].includes(v) ? 'library' : v)));
+    const drilled = v !== 'sort' && Object.keys(f).length > 0;
+    const libView = ['playlists', 'songs', 'artists', 'albums'].includes(v) && !drilled;      // Playlists/Songs/Artists/Albums live in the player header
+    if (libView) store.set('libTab', v);
+    $('lib-tabs').classList.toggle('hidden', !libView); $('lib-tabs').classList.toggle('flex', libView);
+    $('view-title').classList.toggle('hidden', libView);
+    document.querySelectorAll('.lib-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === (v === 'playlist' ? 'playlists' : v)));
+    $('back-btn').classList.toggle('hidden', !drilled);
+    $('view-title').textContent = v === 'sort' ? f.title : drilled ? (f.name || f.album || f.credit) : ({songs:'Songs',artists:'Artists',albums:'Albums',home:'Home',sort:'Sort',media:'Media',playlists:'Playlists','needs-tags':'Needs tags',downloads:'Downloads'}[v] || 'Songs');
+    if (v === 'downloads') return renderDownloads();
+    if (v === 'home') return renderHome();
+    if (v === 'sort') return renderSort();
+    if (v === 'media') return renderMedia();
+    if (v === 'playlists') return renderPlaylists();
+    if (v === 'playlist') return loadPlaylist(f.id);
+    if (v === 'artists' && !drilled) return renderArtists();
+    if (v === 'albums' && !drilled) return renderAlbums();
+    return loadTracks(true);
+}
+
+const NEEDS_TAGS_HINT = `<p class="text-xs text-gray-500 mb-3">No title/artist tags — names guessed from filenames.</p>`;
+const ONBOARDING = `<div class="mt-8 text-sm text-gray-400">Nothing here yet. <button class="ml-1 text-indigo-400 hover:text-indigo-300 font-semibold" data-goto="home">Get started →</button></div>`;
+const COLS = [['title', 'Title', 'c-title'], ['artist', 'Artist', 'c-artist'], ['album', 'Album', 'c-album'], ['added', 'Added', 'c-added'], ['duration', 'Time', 'c-time']];
+function theadHtml(sortable) {
+    const cell = ([k, label, cls]) => {
+        const on = sortable && sortKey === k, arrow = on ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+        const inner = sortable ? `<button class="sort-btn ${on ? 'on' : ''}" data-sort="${k}">${label}${arrow}</button>` : `<span class="sort-btn">${label}</span>`;
+        return `<div class="${cls} ${k === 'duration' ? 'text-right' : ''}">${inner}</div>`;
+    };
+    const [title, artist, album, added, time] = COLS.map(cell);
+    return `<div class="cols"><span class="c-idx"></span><span class="c-art"></span>${title}${artist}${album}${added}${time}<span></span></div>`;
+}
+
+function actionsHtml() {
+    const local = view === 'playlist' && filter.kind === 'local';
+    const b = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors';
+    return `<div class="flex items-center gap-2 mb-3 flex-wrap">
+        <button id="act-play" class="${b} bg-indigo-600 hover:bg-indigo-500">▶ Play</button>
+        <button id="act-shuffle" class="${b} bg-gray-800 hover:bg-gray-700">🔀 Shuffle</button>
+        ${local ? `<button id="act-rename" class="${b} bg-gray-800 hover:bg-gray-700">Rename</button><button id="act-delete" class="${b} bg-gray-800 hover:bg-red-900">Delete</button>` : ''}
+        ${view === 'playlist' && !local ? '<span class="text-xs text-gray-500">Synced from downloads</span>' : ''}
+    </div>`;
+}
+
+async function loadTracks(reset) {
+    if (loading && !reset) return;
+    const drilled = Object.keys(filter).length > 0;
+    if (reset) { listTracks = []; listPage = 1; listPages = 1; $('content').innerHTML = (drilled ? actionsHtml() : '') + (view === 'needs-tags' ? NEEDS_TAGS_HINT : '') + theadHtml(true) + '<div id="rows"></div><div id="more" class="text-center text-xs text-gray-500 py-4"></div>'; $('content').scrollTop = 0; }
+    if (listPage > listPages) return;
+    loading = true; const my = ++reqId;
+    const p = new URLSearchParams({ q: $('search').value.trim(), sort: sortKey, dir: sortDir, page: listPage, limit: 100 });
+    for (const k of ['credit', 'album']) if (filter[k] != null) p.set(k, filter[k]);
+    if (view === 'needs-tags') p.set('needs_tags', '1');
+    try {
+        const d = await fetch('/api/library/tracks?' + p).then(r => r.json());
+        if (my !== reqId) return;
+        const start = listTracks.length;
+        listTracks.push(...d.tracks); listPages = d.pages; listPage++;
+        appendRows(d.tracks, start);
+        if (listTracks.length === 0) {
+            const plain = !$('search').value.trim() && !drilled && view !== 'needs-tags';
+            $('more').innerHTML = plain ? ONBOARDING : '<span>Nothing matches.</span>';
+        } else $('more').textContent = listPage > listPages ? `${d.total} track${d.total === 1 ? '' : 's'}` : 'Loading…';
+    } catch { $('more').textContent = 'Failed to load tracks.'; }
+    finally { if (my === reqId) loading = false; }
+}
+
+async function loadPlaylist(id) {
+    const my = ++reqId;
+    const r = await fetch('/api/library/playlists/' + id);
+    if (my !== reqId) return;
+    if (!r.ok) { refreshSidebarPlaylists(); return setView('playlists'); }
+    const d = await r.json();
+    filter = { id: d.id, name: d.name, kind: d.kind };
+    $('view-title').textContent = d.name;
+    listTracks = d.tracks; listPage = 2; listPages = 1;
+    $('content').innerHTML = actionsHtml() + theadHtml(false) + '<div id="rows"></div><div id="more" class="text-center text-xs text-gray-500 py-4"></div>';
+    appendRows(d.tracks, 0);
+    const mins = Math.round(d.tracks.reduce((a, t) => a + (t.duration || 0), 0) / 60);
+    $('more').textContent = d.tracks.length ? `${d.tracks.length} track${d.tracks.length === 1 ? '' : 's'} · ${mins} min` : (d.kind === 'local' ? 'Empty — add songs with ＋' : 'No tracks.');
+}
+
+function appendRows(tracks, offset) {
+    const inLocalPl = view === 'playlist' && filter.kind === 'local';
+    const frag = tracks.map((t, i) => `
+        <div class="row ${isPlaying(t) ? 'playing' : ''}" data-i="${offset + i}" data-id="${t.id}">
+            <span class="c-idx text-xs text-gray-500 text-right">${offset + i + 1}</span>
+            ${artEl(t, 'w-10 h-10 rounded')}
+            <div class="min-w-0"><div class="t-title text-sm font-medium truncate">${esc(t.title)}</div>
+                 <div class="m-artist text-xs text-gray-400 truncate">${esc(t.artist || 'Unknown artist')}</div></div>
+            <div class="c-artist text-xs text-gray-400 truncate">${esc(t.artist || 'Unknown artist')}</div>
+            <div class="c-album text-xs text-gray-500 truncate">${esc(t.album)}</div>
+            <div class="c-added text-xs text-gray-500">${t.added_at ? new Date(t.added_at * 1000).toLocaleDateString() : ''}</div>
+            <div class="text-xs text-gray-500 text-right">${fmt(t.duration)}</div>
+            <div class="flex justify-end"><button class="row-act" data-act="add" title="Add to playlist">＋</button>${inLocalPl ? '<button class="row-act" data-act="rm" title="Remove from this playlist">✕</button>' : ''}</div>
+        </div>`).join('');
+    $('rows').insertAdjacentHTML('beforeend', frag);
+}
+
+
+
+// ── Media (folders · organize · duplicates) ─────────────────────────────────
+let mediaTab = store.get('mediaTab', 'folders');
+if (mediaTab === 'duplicates') mediaTab = 'folders';   // moved to Sort › Duplicates
+const fmtBytes = n => { for (const u of ['B', 'KB', 'MB', 'GB']) { if (n < 1024) return `${n.toFixed(u === 'B' ? 0 : 1)} ${u}`; n /= 1024; } return `${n.toFixed(1)} TB`; };
+const mbtn = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors';
+
+async function renderMedia() {
+    const stats = await fetch('/api/library/stats').then(r => r.json()).catch(() => ({}));
+    if (view !== 'media') return;
+    const tabs = [['folders', 'Folders'], ['organize', 'Organize'], ['tags', 'Needs tags', stats.needs_tags]];
+    $('content').innerHTML = `<div class="max-w-4xl mx-auto">
+        <div class="flex gap-1 border-b border-gray-800 mb-5">${tabs.map(([k, label, n]) => `
+            <button data-mtab="${k}" class="px-3 py-2 text-sm font-semibold -mb-px border-b-2 ${mediaTab === k ? 'border-indigo-500 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}">${label}${n ? ` <span class="ml-1 text-[10px] bg-yellow-900 text-yellow-300 rounded px-1.5 py-0.5">${n}</span>` : ''}</button>`).join('')}</div>
+        <div id="media-body"><p class="text-xs text-gray-500">Loading…</p></div></div>`;
+    ({ folders: mediaFolders, organize: mediaOrganize, tags: mediaTags }[mediaTab] || mediaFolders)();
+}
+
+async function mediaFolders() {
+    const roots = await fetch('/api/library/roots').then(r => r.json()).catch(() => []);
+    if (!$('media-body')) return;
+    const label = { ytmusic: 'Downloads', import: 'Local media' };
+    const hasImport = roots.some(r => r.source === 'import');
+    $('media-body').innerHTML = roots.map(r => `
+        <section class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-3">
+          <div class="flex items-start justify-between gap-3 mb-2"><div class="min-w-0">
+            <h3 class="text-sm font-bold">${label[r.source] || esc(r.source)}</h3><code class="text-[11px] text-indigo-300">${esc(r.path)}</code></div>
+            <div class="text-xs text-gray-400 text-right flex-shrink-0">${r.tracks} tracks · <span class="text-gray-600">${fmtBytes(r.size)}</span></div></div>
+          ${r.folders.length ? `<div class="grid sm:grid-cols-2 gap-x-6">${r.folders.slice(0, 30).map(f => `<div class="flex justify-between text-xs py-1 border-b border-gray-800/60"><span class="truncate text-gray-300">${esc(f.name)}</span><span class="text-gray-600 ml-2">${f.tracks}</span></div>`).join('')}</div>${r.folders.length > 30 ? `<p class="text-[11px] text-gray-600 mt-2">+${r.folders.length - 30} more</p>` : ''}` : '<p class="text-xs text-gray-500">Empty</p>'}
+        </section>`).join('') + (hasImport ? '' : `
+        <section class="bg-gray-900 border border-dashed border-gray-700 rounded-xl p-4 mb-3 text-xs text-gray-400">
+          <b class="text-sm text-gray-200">Local media</b><br>No folder mounted — map a volume to <code class="text-indigo-300">/app/music</code>.</section>`) +
+        `<button data-goto="rescan" class="${mbtn} bg-indigo-600 hover:bg-indigo-500">Scan for new files</button>`;
+}
+
+async function mediaOrganize() {
+    const d = await fetch('/api/library/organize/preview').then(r => r.json()).catch(() => null);
+    if (!$('media-body') || !d) return;
+    const n = d.moves.length;
+    const stat = (v, l, c = 'text-gray-200') => `<div class="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3"><div class="text-xl font-bold ${c}">${v}</div><div class="text-[11px] text-gray-500">${l}</div></div>`;
+    $('media-body').innerHTML = `
+        <p class="text-sm text-gray-300 mb-3">Sort local files into <code class="text-indigo-300">Artist / Album / 01 - Title</code></p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">${stat(n, 'to move', n ? 'text-indigo-300' : 'text-gray-200')}${stat(d.already_ok, 'sorted', 'text-emerald-300')}${stat(d.untagged, 'no tags', d.untagged ? 'text-yellow-300' : 'text-gray-200')}${stat(d.conflicts.length, 'conflicts', d.conflicts.length ? 'text-red-300' : 'text-gray-200')}</div>
+        <div class="flex items-center gap-2 mb-4 flex-wrap">
+          <button id="org-apply" class="${mbtn} bg-indigo-600 hover:bg-indigo-500 ${n ? '' : 'opacity-40 pointer-events-none'}">Move ${n} file${n === 1 ? '' : 's'}</button>
+          ${d.can_undo ? `<button id="org-undo" class="${mbtn} bg-gray-800 hover:bg-gray-700">Undo last</button>` : ''}
+          ${d.untagged ? `<button data-goto="needs-tags" class="${mbtn} bg-gray-800 hover:bg-gray-700">Untagged</button>` : ''}</div>
+        ${n ? `<div class="bg-gray-900 border border-gray-800 rounded-xl p-3 text-[11px] font-mono max-h-96 overflow-auto">${d.moves.slice(0, 200).map(m => `<div class="py-1 border-b border-gray-800/60 last:border-0"><span class="text-gray-500">${esc(m.from)}</span><br><span class="text-emerald-300">→ ${esc(m.to)}</span></div>`).join('')}${n > 200 ? `<div class="pt-2 text-gray-600">+${n - 200} more</div>` : ''}</div>` : '<p class="text-xs text-gray-500">All sorted.</p>'}
+        ${d.conflicts.length ? `<h4 class="text-xs font-bold text-red-300 mt-4 mb-1">Skipped · destination exists</h4><div class="text-[11px] font-mono text-gray-500">${d.conflicts.slice(0, 20).map(m => `<div>${esc(m.from)} → ${esc(m.to)}</div>`).join('')}</div>` : ''}`;
+    if ($('org-apply')) $('org-apply').onclick = async () => {
+        if (!await askConfirm({ title: `Move ${n} file${n === 1 ? '' : 's'}?`, message: 'You can undo this afterwards.', confirm: 'Move' })) return;
+        const r = await fetch('/api/library/organize/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json());
+        toast(`Moved ${r.moved}${r.errors.length ? ` · ${r.errors.length} failed` : ''}`);
+        refreshStats(); mediaOrganize();
+    };
+    if ($('org-undo')) $('org-undo').onclick = async () => {
+        const r = await fetch('/api/library/organize/undo', { method: 'POST' }).then(r => r.json());
+        toast(`Restored ${r.restored}`); refreshStats(); mediaOrganize();
+    };
+}
+
+async function mediaTags() {
+    const st = await fetch('/api/library/stats').then(r => r.json()).catch(() => ({}));
+    if (!$('media-body')) return;
+    $('media-body').innerHTML = st.needs_tags ? `<p class="text-sm text-gray-300 mb-3"><b>${st.needs_tags}</b> file${st.needs_tags === 1 ? '' : 's'} without tags</p>
+        <button data-goto="needs-tags" class="${mbtn} bg-indigo-600 hover:bg-indigo-500">Review</button>` : '<p class="text-sm text-gray-400">All tagged 🎉</p>';
+}
+
+document.addEventListener('click', e => {
+    if (view !== 'media') return;
+    const tab = e.target.closest('[data-mtab]');
+    if (tab) { mediaTab = tab.dataset.mtab; store.set('mediaTab', mediaTab); renderMedia(); }
+});
+
+// ── Sort (the sorter's own pages, hosted in the player) ─────────────────────
+const SORT_PAGES = { queue: ['/sort', 'New likes'], misfiled: ['/sort/misfiled', 'Misfiled'], dupes: ['/sort/duplicates', 'Duplicates'], stats: ['/sort/stats', 'Sorter stats'] };
+let sortCounts = { queue: 0, misfiled: 0, dupes: 0 };
+
+function renderSort() {
+    $('content').innerHTML = `<iframe title="${esc(filter.title)}" src="${esc(filter.path)}?embed=1" class="w-full rounded-xl bg-gray-950 border border-gray-800" style="height:calc(100vh - 9.5rem)"></iframe>`;
+}
+
+async function refreshSortCounts() {
+    const j = u => fetch(u).then(r => r.json()).catch(() => null);
+    const [q, m, d] = await Promise.all([j('/api/sort/queue'), j('/api/sort/remodel'), j('/api/sort/duplicates')]);
+    if (q) sortCounts.queue = (q.tracks || []).length;
+    if (m) sortCounts.misfiled = (m.tracks || []).length;
+    if (d) sortCounts.dupes = (d.groups || []).length + (d.tier_a_extra ? 1 : 0);
+    document.querySelectorAll('.sort-count').forEach(el => { const n = sortCounts[el.dataset.count] || 0; el.textContent = n; el.classList.toggle('hidden', !n); });
+}
+document.querySelectorAll('.sort-item').forEach(b => b.addEventListener('click', () => {
+    if (innerWidth < 768) $('sidebar').classList.add('hidden');
+    setView('sort', { path: b.dataset.path, title: b.dataset.title });
+}));
+window.addEventListener('message', e => { if (e.data === 'tool-modal-close') { refreshSortCounts(); setView('home'); } });
+setInterval(refreshSortCounts, 30000);
+
+// ── Home (start page) ───────────────────────────────────────────────────────
+async function renderHome() {
+    const [stats, auth] = await Promise.all([
+        fetch('/api/library/stats').then(r => r.json()).catch(() => ({ tracks: 0, sources: {} })),
+        fetch('/auth/status').then(r => r.json()).catch(() => ({})),
+        refreshSidebarPlaylists(),
+    ]);
+    if (view !== 'home') return;
+    const src = stats.sources || {};
+    const pill = (t, c) => ` <span class="ml-1 align-middle text-[10px] font-semibold rounded px-1.5 py-0.5 ${c}">${t}</span>`;
+    const item = (icon, title, desc, goto, extra = '') => `
+        <button data-goto="${goto}" class="home-item"><span class="text-lg w-6 text-center">${icon}</span>
+        <span class="flex-1 min-w-0"><span class="block text-sm font-semibold text-gray-100">${title}${extra}</span><span class="block text-xs text-gray-500">${desc}</span></span></button>`;
+    await refreshSortCounts();
+    if (view !== 'home') return;
+    const now = queue[qIdx];
+    const connected = !!auth.authenticated;
+    $('content').innerHTML = `
+      <div class="max-w-4xl mx-auto">
+        <div class="flex items-center justify-between mb-4">
+          <h1 class="text-xl font-bold">${stats.tracks ? 'Welcome back' : 'Welcome'}</h1>
+          <label class="flex items-center gap-2 text-xs text-gray-500 cursor-pointer"><input type="checkbox" id="home-startup" ${store.get('homeStartup', false) ? 'checked' : ''}> Show on startup</label>
+        </div>
+        <div class="grid md:grid-cols-2 gap-6">
+          <section>
+            <h2 class="home-h">Sort</h2>
+            ${item('✨', 'New likes', sortCounts.queue ? `${sortCounts.queue} to file` : 'All filed', 'sort:queue', sortCounts.queue ? pill(sortCounts.queue, 'bg-yellow-900 text-yellow-300') : '')}
+            ${item('🧭', 'Misfiled', sortCounts.misfiled ? `${sortCounts.misfiled} to review` : 'Nothing flagged', 'sort:misfiled', sortCounts.misfiled ? pill(sortCounts.misfiled, 'bg-yellow-900 text-yellow-300') : '')}
+            ${item('🧬', 'Duplicates', sortCounts.dupes ? `${sortCounts.dupes} to resolve` : 'None found', 'sort:dupes', sortCounts.dupes ? pill(sortCounts.dupes, 'bg-yellow-900 text-yellow-300') : '')}
+            <h2 class="home-h mt-3">Start</h2>
+            ${item('🔌', 'Connect YouTube Music', connected ? 'Syncing playlists' : 'Sign in to sync', 'downloads', pill(connected ? 'connected' : 'off', connected ? 'bg-emerald-900 text-emerald-300' : 'bg-gray-800 text-gray-400'))}
+            ${item('📁', 'Load local music', 'Files or folders', 'media')}
+            ${item('⬇️', 'Download a link', 'Track or playlist URL', 'downloads')}
+            ${item('＋', 'New playlist', 'Mix any songs', 'newpl')}
+          </section>
+          <section>
+            <h2 class="home-h">Library</h2>
+            <button data-goto="stats" class="home-item mb-2" style="background:#111827;border:1px solid #1f2937">
+              ${stats.tracks ? `<span class="flex-1"><span class="block text-sm text-gray-200"><b>${stats.tracks}</b> tracks · <b>${sidePlaylists.length}</b> playlists</span>
+              <span class="block text-xs text-gray-500">${src.ytmusic || 0} YouTube Music · ${src.import || 0} local</span></span><span class="text-xs text-indigo-400">Stats →</span>`
+              : '<span class="text-xs text-gray-500">Nothing here yet</span>'}
+            </button>
+            ${stats.needs_tags ? `<button data-goto="needs-tags" class="home-item text-yellow-300 text-xs font-semibold">⚠ ${stats.needs_tags} need tags</button>` : ''}
+            ${now ? `<h2 class="home-h mt-3">Continue</h2><button data-goto="resume" class="home-item">${artEl(now, 'w-9 h-9 rounded')}
+              <span class="min-w-0"><span class="block text-sm font-semibold truncate">${esc(now.title)}</span><span class="block text-xs text-gray-500 truncate">${esc(now.artist || '')}</span></span></button>` : ''}
+            ${sidePlaylists.length ? `<h2 class="home-h mt-3">Playlists</h2>
+              ${sidePlaylists.slice(0, 4).map(p => `<button data-goto="pl:${p.id}" class="home-item" style="padding:5px 10px">${artEl(p.art_track_id ? { id: p.art_track_id, has_art: 1 } : null, 'w-8 h-8 rounded')}
+                <span class="flex-1 truncate text-sm">${esc(p.name)}</span><span class="text-[10px] text-gray-500">${p.tracks}</span></button>`).join('')}` : ''}
+          </section>
+        </div>
+      </div>`;
+    $('home-startup').onchange = e => store.set('homeStartup', e.target.checked);
+}
+
+// ── Stats modal ─────────────────────────────────────────────────────────────
+async function openStats() {
+    const m = $('stats-modal'); m.classList.remove('hidden'); m.classList.add('flex');
+    $('stats-body').textContent = 'Loading…';
+    const j = u => fetch(u).then(r => r.json()).catch(() => null);
+    const [st, artists, albums, pls, dl] = await Promise.all([j('/api/library/stats'), j('/api/library/artists'), j('/api/library/albums'), j('/api/library/playlists'), j('/api/status'), refreshSortCounts()]);
+    if (!st) { $('stats-body').textContent = 'Could not load stats.'; return; }
+    const src = st.sources || {}, total = Math.max(1, (src.ytmusic || 0) + (src.import || 0));
+    const h = Math.floor(st.duration / 3600), mi = Math.round((st.duration % 3600) / 60);
+    const tile = (v, l) => `<div class="bg-gray-950/60 border border-gray-800 rounded-xl px-3 py-2"><div class="text-lg font-bold text-gray-100">${v}</div><div class="text-[11px] text-gray-500">${l}</div></div>`;
+    const row = (l, v, cls = '') => `<div class="flex justify-between text-xs py-1.5 border-b border-gray-800/60 last:border-0"><span class="text-gray-500">${l}</span><span class="${cls || 'text-gray-300'}">${v}</span></div>`;
+    $('stats-body').innerHTML = `
+      <div class="grid grid-cols-3 gap-2 mb-4">${tile(st.tracks, 'Tracks')}${tile((artists || []).length, 'Artists')}${tile((albums || []).length, 'Albums')}
+        ${tile((pls || []).length, 'Playlists')}${tile(h ? `${h}h ${mi}m` : `${mi}m`, 'Playtime')}${tile(fmtBytes(st.size), 'Size')}</div>
+      <div class="h-2 rounded-full overflow-hidden bg-gray-800 flex mb-1"><div style="width:${(src.ytmusic || 0) / total * 100}%" class="bg-indigo-500"></div><div style="width:${(src.import || 0) / total * 100}%" class="bg-emerald-500"></div></div>
+      <div class="flex justify-between text-[11px] text-gray-500 mb-4"><span><i class="inline-block w-2 h-2 rounded-full bg-indigo-500 mr-1"></i>YouTube Music ${src.ytmusic || 0}</span><span><i class="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1"></i>Local ${src.import || 0}</span></div>
+      ${row('New likes to file', sortCounts.queue, sortCounts.queue ? 'text-yellow-300' : '')}${row('Misfiled to review', sortCounts.misfiled, sortCounts.misfiled ? 'text-yellow-300' : '')}${row('Duplicates to resolve', sortCounts.dupes, sortCounts.dupes ? 'text-yellow-300' : '')}${row('Needs tags', st.needs_tags || 0, st.needs_tags ? 'text-yellow-300' : '')}
+      ${dl ? row('Last download', dl.last_run) + row('Next download', dl.next_run || '—') + (dl.running ? row('Status', 'Downloading…', 'text-emerald-300') : '') : ''}`;
+}
+const closeStats = () => { $('stats-modal').classList.add('hidden'); $('stats-modal').classList.remove('flex'); };
+$('stats-btn').addEventListener('click', openStats);
+$('stats-close').addEventListener('click', closeStats);
+$('stats-modal').addEventListener('click', e => { if (e.target === $('stats-modal')) closeStats(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeStats(); });
+
+// ── In-app dialogs (replace browser prompt/confirm) ─────────────────────────
+function dialog(inner) {
+    const ov = document.createElement('div');
+    ov.className = 'fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4';
+    ov.innerHTML = `<div class="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-sm shadow-2xl">${inner}</div>`;
+    document.body.appendChild(ov);
+    return ov;
+}
+const dlgBtn = 'px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors';
+
+function askText({ title, value = '', placeholder = '', confirm = 'Save' }) {
+    return new Promise(resolve => {
+        const ov = dialog(`<h3 class="font-bold text-sm mb-3">${esc(title)}</h3>
+            <input class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500" placeholder="${esc(placeholder)}" maxlength="120">
+            <div class="flex justify-end gap-2 mt-4"><button data-x class="${dlgBtn} text-gray-400 hover:text-white">Cancel</button><button data-ok class="${dlgBtn} bg-indigo-600 hover:bg-indigo-500">${esc(confirm)}</button></div>`);
+        const input = ov.querySelector('input'); input.value = value; input.focus(); input.select();
+        const done = v => { ov.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+        const ok = () => { const v = input.value.trim(); v ? done(v) : input.focus(); };
+        const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); done(null); } else if (e.key === 'Enter') ok(); };
+        document.addEventListener('keydown', onKey, true);
+        ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('[data-x]')) done(null); else if (e.target.closest('[data-ok]')) ok(); });
+    });
+}
+
+function askConfirm({ title, message = '', confirm = 'Confirm', danger = false }) {
+    return new Promise(resolve => {
+        const ov = dialog(`<h3 class="font-bold text-sm">${esc(title)}</h3>${message ? `<p class="text-xs text-gray-400 mt-2">${esc(message)}</p>` : ''}
+            <div class="flex justify-end gap-2 mt-4"><button data-x class="${dlgBtn} text-gray-400 hover:text-white">Cancel</button><button data-ok class="${dlgBtn} ${danger ? 'bg-red-700 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-500'}">${esc(confirm)}</button></div>`);
+        ov.querySelector('[data-ok]').focus();
+        const done = v => { ov.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+        const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+        document.addEventListener('keydown', onKey, true);
+        ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('[data-x]')) done(false); else if (e.target.closest('[data-ok]')) done(true); });
+    });
+}
+
+// ── Playlists ───────────────────────────────────────────────────────────────
+function toast(msg) {
+    const el = Object.assign(document.createElement('div'), { className: 'toast', textContent: msg });
+    document.body.appendChild(el); setTimeout(() => el.remove(), 2400);
+}
+
+async function refreshSidebarPlaylists() {
+    try { sidePlaylists = await fetch('/api/library/playlists').then(r => r.json()); } catch {}
+}
+
+async function renderPlaylists() {
+    await refreshSidebarPlaylists();
+    const card = p => `<div class="card" data-pl="${p.id}" data-kind="${p.kind}" data-name="${esc(p.name)}">
+        ${artEl(p.art_track_id ? { id: p.art_track_id, has_art: 1 } : null, 'w-full aspect-square rounded mb-2')}
+        <div class="text-sm font-semibold truncate">${esc(p.name)}</div>
+        <div class="text-xs text-gray-500">${p.tracks} track${p.tracks === 1 ? '' : 's'}${p.kind === 'folder' ? ' · from downloads' : ''}</div></div>`;
+    $('content').innerHTML = `<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div class="card flex items-center justify-center text-sm text-gray-400 aspect-square" style="border-style:dashed" data-newpl="1">＋ New playlist</div>
+        ${sidePlaylists.map(card).join('')}</div>`;
+}
+
+async function newPlaylist(trackIds = []) {
+    const name = await askText({ title: 'New playlist', placeholder: 'Playlist name', confirm: 'Create' });
+    if (!name) return null;
+    const r = await fetch('/api/library/playlists', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, track_ids: trackIds }) });
+    if (!r.ok) { toast((await r.json().catch(() => ({}))).error || 'Could not create playlist'); return null; }
+    const { id } = await r.json();
+    await refreshSidebarPlaylists();
+    if (view === 'playlists') renderPlaylists();
+    return id;
+}
+
+async function pickPlaylist(trackId) {
+    await refreshSidebarPlaylists();
+    const local = sidePlaylists.filter(p => p.kind === 'local');
+    const ov = document.createElement('div');
+    ov.className = 'fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4';
+    ov.innerHTML = `<div class="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-sm">
+        <div class="flex justify-between items-center mb-3"><h3 class="font-bold text-sm">Add to playlist</h3><button class="icon-btn" data-close>✕</button></div>
+        <div class="max-h-64 overflow-y-auto flex flex-col gap-1">${local.map(p => `<button class="nav-btn" data-pick="${p.id}"><span class="truncate flex-1">${esc(p.name)}</span><span class="text-[10px] text-gray-500">${p.tracks}</span></button>`).join('') || '<p class="text-xs text-gray-500 px-2 py-2">No playlists yet.</p>'}</div>
+        <button class="nav-btn mt-2 border border-dashed border-gray-700" data-new>＋ New playlist…</button></div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', async e => {
+        if (e.target === ov || e.target.closest('[data-close]')) return ov.remove();
+        const pick = e.target.closest('[data-pick]'), mk = e.target.closest('[data-new]');
+        if (!pick && !mk) return;
+        ov.remove();
+        if (mk) { if (await newPlaylist([trackId])) toast('Added to new playlist'); return; }
+        const r = await fetch(`/api/library/playlists/${pick.dataset.pick}/tracks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ track_ids: [trackId] }) });
+        const d = await r.json().catch(() => ({}));
+        toast(r.ok ? (d.added ? 'Added to playlist' : 'Already in that playlist') : (d.error || 'Failed'));
+        refreshSidebarPlaylists();
+    });
+}
+
+async function renderArtists() {
+    const list = await fetch('/api/library/artists').then(r => r.json());
+    $('content').innerHTML = list.length ? `<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">${list.map(a => `
+        <div class="card" data-credit="${esc(a.name)}"><div class="text-sm font-semibold truncate">${esc(a.name)}</div>
+        <div class="text-xs text-gray-500">${a.tracks} track${a.tracks === 1 ? '' : 's'}${a.albums ? ' · ' + a.albums + ' album' + (a.albums === 1 ? '' : 's') : ''}</div></div>`).join('')}</div>`
+        : '<p class="text-sm text-gray-500">No artists yet.</p>';
+}
+
+async function renderAlbums() {
+    const list = await fetch('/api/library/albums').then(r => r.json());
+    $('content').innerHTML = list.length ? `<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">${list.map(a => `
+        <div class="card" data-credit="${esc(a.artist)}" data-album="${esc(a.album)}">
+        ${artEl(a.art_track_id ? {id: a.art_track_id, has_art: 1} : null, 'w-full aspect-square rounded mb-2')}
+        <div class="text-sm font-semibold truncate">${esc(a.album)}</div>
+        <div class="text-xs text-gray-500 truncate">${esc(a.artist)}${a.year ? ' · ' + a.year : ''}</div></div>`).join('')}</div>`
+        : '<p class="text-sm text-gray-500">No albums yet.</p>';
+}
+
+// ── Playback ────────────────────────────────────────────────────────────────
+const isPlaying = t => qIdx >= 0 && queue[qIdx] && queue[qIdx].id === t.id;
+
+function playQueue(tracks, idx) {
+    queue = tracks.slice(); history = [];
+    playAt(idx);
+}
+
+function playAt(i, autoplay = true) {
+    if (i < 0 || i >= queue.length) return;
+    qIdx = i;
+    const t = queue[i];
+    audio.src = `/api/stream/${t.id}`;
+    if (autoplay) audio.play().catch(() => {});
+    updateNowPlaying(); persist();
+}
+
+function nextIndex(dir) {
+    if (!queue.length) return -1;
+    if (dir > 0) {
+        if (repeat === 'one') return qIdx;
+        if (shuffle && queue.length > 1) { let n; do { n = Math.floor(Math.random() * queue.length); } while (n === qIdx); return n; }
+        if (qIdx + 1 < queue.length) return qIdx + 1;
+        return repeat === 'all' ? 0 : -1;
+    }
+    if (audio.currentTime > 3) return qIdx;              // restart current track first
+    if (shuffle && history.length) return history.pop();
+    return qIdx > 0 ? qIdx - 1 : (repeat === 'all' ? queue.length - 1 : qIdx);
+}
+
+function step(dir) {
+    const n = nextIndex(dir);
+    if (n < 0) { audio.pause(); return; }
+    if (dir > 0 && shuffle && qIdx >= 0) history.push(qIdx);
+    if (n === qIdx) { audio.currentTime = 0; audio.play().catch(() => {}); } else playAt(n);
+}
+
+function updateNowPlaying() {
+    const t = queue[qIdx];
+    $('np-title').textContent = t ? t.title : 'Nothing playing';
+    $('np-artist').textContent = t ? (t.artist || 'Unknown artist') : ' ';
+    $('np-art').outerHTML = (t && t.has_art)
+        ? `<img id="np-art" class="w-14 h-14 rounded art" src="/api/art/${t.id}" alt="" onerror="this.style.visibility='hidden'">`
+        : '<div id="np-art" class="w-14 h-14 rounded art"></div>';
+    document.title = t ? `${t.title} — ${t.artist || 'Music'}` : 'Music Player';
+    document.querySelectorAll('.row').forEach(r => r.classList.toggle('playing', t && Number(r.dataset.id) === t.id));
+    renderQueue();
+    if ('mediaSession' in navigator && t) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: t.title, artist: t.artist || '', album: t.album || '',
+            artwork: t.has_art ? [{ src: `/api/art/${t.id}` }] : [],
+        });
+    }
+}
+
+function renderQueue() {
+    $('queue-list').innerHTML = queue.length ? queue.map((t, i) => `
+        <div class="row ${i === qIdx ? 'playing' : ''}" style="grid-template-columns:2.5rem 1fr 3rem" data-q="${i}">
+            ${artEl(t, 'w-10 h-10 rounded')}
+            <div class="min-w-0"><div class="t-title text-sm truncate">${esc(t.title)}</div><div class="text-xs text-gray-400 truncate">${esc(t.artist)}</div></div>
+            <div class="text-xs text-gray-500 text-right">${fmt(t.duration)}</div>
+        </div>`).join('') : '<p class="p-3 text-sm text-gray-500">Queue is empty.</p>';
+}
+
+function persist() { store.set('queue', queue); store.set('qIdx', qIdx); }
+function syncModeButtons() {
+    $('shuffle-btn').classList.toggle('on', shuffle);
+    $('repeat-btn').classList.toggle('on', repeat !== 'off');
+    $('repeat-btn').innerHTML = repeat === 'one' ? ICON.repeat1 : ICON.repeat;
+}
+
+// ── Events ──────────────────────────────────────────────────────────────────
+$('content').addEventListener('click', async e => {
+    const g = e.target.closest('[data-goto]');
+    if (g) {
+        const to = g.dataset.goto;
+        if (to === 'rescan') return $('rescan-btn').click();
+        if (to === 'stats') return openStats();
+        if (to.startsWith('sort:')) { const [path, title] = SORT_PAGES[to.slice(5)]; return setView('sort', { path, title }); }
+        if (to === 'newpl') { const id = await newPlaylist(); if (id) setView('playlist', { id, name: '', kind: 'local' }); return; }
+        if (to === 'resume') { if (queue[qIdx]) { audio.play().catch(() => {}); } return; }
+        if (to.startsWith('pl:')) { const p = sidePlaylists.find(x => x.id === Number(to.slice(3))); if (p) setView('playlist', { id: p.id, name: p.name, kind: p.kind }); return; }
+        return setView(to);
+    }
+    const sb = e.target.closest('[data-sort]');
+    if (sb) {
+        const k = sb.dataset.sort;
+        if (sortKey === k) sortDir = sortDir === 'asc' ? 'desc' : 'asc'; else { sortKey = k; sortDir = k === 'added' ? 'desc' : 'asc'; }
+        store.set('sortKey', sortKey); store.set('sortDir', sortDir);
+        return loadTracks(true);
+    }
+    const act = e.target.closest('.row-act');
+    if (act) {
+        const id = Number(act.closest('.row').dataset.id);
+        if (act.dataset.act === 'add') return pickPlaylist(id);
+        await fetch(`/api/library/playlists/${filter.id}/tracks/${id}`, { method: 'DELETE' });
+        refreshSidebarPlaylists(); return loadPlaylist(filter.id);
+    }
+    if (e.target.closest('#act-play') && listTracks.length) return playQueue(listTracks, 0);
+    if (e.target.closest('#act-shuffle') && listTracks.length) {
+        shuffle = true; store.set('shuffle', true); syncModeButtons();
+        return playQueue(listTracks, Math.floor(Math.random() * listTracks.length));
+    }
+    if (e.target.closest('#act-rename')) {
+        const name = await askText({ title: 'Rename playlist', value: filter.name, confirm: 'Rename' });
+        if (name) { await fetch('/api/library/playlists/' + filter.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }); refreshSidebarPlaylists(); loadPlaylist(filter.id); }
+        return;
+    }
+    if (e.target.closest('#act-delete')) {
+        if (await askConfirm({ title: `Delete “${filter.name}”?`, message: 'The songs stay in your library.', confirm: 'Delete', danger: true })) { await fetch('/api/library/playlists/' + filter.id, { method: 'DELETE' }); await refreshSidebarPlaylists(); setView('playlists'); }
+        return;
+    }
+    const row = e.target.closest('.row');
+    if (row) return playQueue(listTracks, Number(row.dataset.i));
+    const card = e.target.closest('.card');
+    if (!card) return;
+    if (card.dataset.newpl) { const id = await newPlaylist(); if (id) setView('playlist', { id, name: '', kind: 'local' }); return; }
+    if (card.dataset.pl) return setView('playlist', { id: Number(card.dataset.pl), name: card.dataset.name, kind: card.dataset.kind });
+    const f = { credit: card.dataset.credit };
+    if (card.dataset.album != null) f.album = card.dataset.album;
+    setView('tracks', f);
+});
+$('content').addEventListener('scroll', () => {
+    const c = $('content');
+    if (['songs', 'tracks', 'needs-tags'].includes(view) && c.scrollTop + c.clientHeight > c.scrollHeight - 300) loadTracks(false);
+});
+$('queue-list').addEventListener('click', e => { const r = e.target.closest('[data-q]'); if (r) playAt(Number(r.dataset.q)); });
+document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.addEventListener('click', () => { if (innerWidth < 768) { $('sidebar').classList.add('hidden'); } setView(b.dataset.view); }));
+document.querySelectorAll('.lib-tab').forEach(t => t.addEventListener('click', () => setView(t.dataset.tab)));
+$('back-btn').addEventListener('click', () => setView(view === 'playlist' ? 'playlists' : (view === 'tracks' && filter.album ? 'albums' : 'artists')));
+$('menu-btn').addEventListener('click', () => { const sb = $('sidebar'); sb.classList.toggle('hidden'); sb.classList.toggle('flex', !sb.classList.contains('hidden')); });
+let searchTimer;
+$('search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { if (['home', 'artists', 'albums', 'playlists', 'playlist'].includes(view)) setView('songs'); else loadTracks(true); }, 250); });
+
+$('play-btn').addEventListener('click', () => {
+    if (!audio.src && queue.length) return playAt(Math.max(0, qIdx));
+    audio.paused ? audio.play().catch(() => {}) : audio.pause();
+});
+$('next-btn').addEventListener('click', () => step(1));
+$('prev-btn').addEventListener('click', () => step(-1));
+$('shuffle-btn').addEventListener('click', () => { shuffle = !shuffle; store.set('shuffle', shuffle); syncModeButtons(); });
+$('repeat-btn').addEventListener('click', () => { repeat = ({off:'all', all:'one', one:'off'})[repeat]; store.set('repeat', repeat); syncModeButtons(); });
+$('queue-btn').addEventListener('click', () => { const q = $('queue-panel'); q.classList.toggle('hidden'); q.classList.toggle('flex'); });
+$('queue-close').addEventListener('click', () => { $('queue-panel').classList.add('hidden'); $('queue-panel').classList.remove('flex'); });
+
+audio.addEventListener('play',  () => { $('play-btn').innerHTML = ICON.pause; $('play-btn').setAttribute('aria-label', 'Pause'); if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; });
+audio.addEventListener('pause', () => { $('play-btn').innerHTML = ICON.play; $('play-btn').setAttribute('aria-label', 'Play'); if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; });
+audio.addEventListener('ended', () => step(1));
+audio.addEventListener('error', () => { if (queue[qIdx]) setTimeout(() => step(1), 500); });   // skip unplayable files
+let seeking = false, lastSave = 0;
+audio.addEventListener('timeupdate', () => {
+    const d = audio.duration || queue[qIdx]?.duration || 0;
+    $('t-cur').textContent = fmt(audio.currentTime); $('t-dur').textContent = fmt(d);
+    if (!seeking && d) $('seek').value = Math.round(audio.currentTime / d * 1000);
+    if (Date.now() - lastSave > 2000) { lastSave = Date.now(); store.set('pos', audio.currentTime); }
+});
+$('seek').addEventListener('input', () => { seeking = true; });
+$('seek').addEventListener('change', () => { const d = audio.duration || 0; if (d) audio.currentTime = $('seek').value / 1000 * d; seeking = false; });
+$('volume').addEventListener('input', () => { audio.volume = $('volume').value / 100; store.set('vol', $('volume').value); });
+
+document.addEventListener('keydown', e => {
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName) && document.activeElement.type !== 'range') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (e.key === ' ') { e.preventDefault(); $('play-btn').click(); }
+    else if (k === 'n') step(1); else if (k === 'p') step(-1);
+    else if (k === 's') $('shuffle-btn').click(); else if (k === 'r') $('repeat-btn').click();
+    else if (e.key === 'ArrowRight') audio.currentTime += 5; else if (e.key === 'ArrowLeft') audio.currentTime -= 5;
+    else if (k === '/') { e.preventDefault(); $('search').focus(); }
+});
+
+if ('mediaSession' in navigator) {
+    const ms = navigator.mediaSession;
+    ms.setActionHandler('play', () => audio.play());
+    ms.setActionHandler('pause', () => audio.pause());
+    ms.setActionHandler('nexttrack', () => step(1));
+    ms.setActionHandler('previoustrack', () => step(-1));
+    ms.setActionHandler('seekto', d => { audio.currentTime = d.seekTime; });
+}
+
+
+// ── Downloads ───────────────────────────────────────────────────────────────
+const post = (url, body, json) => fetch(url, { method: 'POST',
+    headers: { 'X-Requested-With': 'fetch', 'Content-Type': json ? 'application/json' : 'application/x-www-form-urlencoded' },
+    body: json ? JSON.stringify(body) : new URLSearchParams(body) });
+const btn = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors';
+const panel = (title, inner) => `<section class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4"><h3 class="text-sm font-bold mb-3">${title}</h3>${inner}</section>`;
+const badge = st => `<span class="px-2 py-0.5 rounded text-[10px] font-semibold ${({success:'bg-emerald-900 text-emerald-300',failed:'bg-red-900 text-red-300',stopped:'bg-yellow-900 text-yellow-300'})[st] || 'bg-gray-800 text-gray-400'}">${esc(st)}</span>`;
+let dlLogName = null;
+
+function renderDownloads() {
+    $('content').innerHTML = `
+      ${panel('Account', `<div class="flex items-center gap-3 flex-wrap"><span id="dl-auth" class="text-xs text-gray-400">Checking…</span>
+         <button id="dl-login" class="${btn} bg-indigo-600 hover:bg-indigo-500">Login</button>
+         <button id="dl-logout" class="${btn} bg-gray-700 hover:bg-gray-600 hidden">Logout</button>
+         <a href="/downloads" target="_blank" class="ml-auto text-xs text-indigo-400 hover:text-indigo-300 font-semibold">Full dashboard ↗</a></div>
+         <div id="dl-auth-form" class="hidden mt-3">
+           <p class="text-xs text-gray-500 mb-2">Paste request headers from music.youtube.com (DevTools → Network).</p>
+           <textarea id="dl-headers" rows="6" class="w-full bg-gray-950 border border-gray-700 rounded-lg p-2 text-xs font-mono focus:outline-none focus:border-indigo-500"></textarea>
+           <div class="flex gap-2 mt-2"><button id="dl-save-auth" class="${btn} bg-indigo-600 hover:bg-indigo-500">Save</button><span id="dl-auth-err" class="text-xs text-red-400 self-center"></span></div></div>`)}
+      ${panel('Run', `<div class="flex items-center gap-2 flex-wrap">
+         <button id="dl-run" class="${btn} bg-emerald-600 hover:bg-emerald-500">Run now</button>
+         <button id="dl-stop" class="${btn} bg-red-700 hover:bg-red-600 hidden">Stop</button>
+         <span id="dl-state" class="text-xs text-gray-400"></span><span id="dl-next" class="text-xs text-gray-500 ml-auto"></span></div>
+         <div class="flex gap-2 mt-3"><input id="dl-url" type="url" placeholder="Download a single track or playlist URL…" class="flex-1 bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500">
+         <button id="dl-url-go" class="${btn} bg-indigo-600 hover:bg-indigo-500">Download</button></div><div id="dl-url-err" class="text-xs text-red-400 mt-1"></div>
+         <pre id="dl-log" class="mt-3 bg-gray-950 border border-gray-800 rounded-lg p-3 text-[11px] text-gray-400 h-56 overflow-auto whitespace-pre-wrap">No log yet.</pre>`)}
+      ${panel('Schedule', `<div class="flex items-center gap-2 flex-wrap"><input id="dl-cron" class="w-48 bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-indigo-500" placeholder="min hour dom mon dow">
+         <button id="dl-cron-save" class="${btn} bg-indigo-600 hover:bg-indigo-500">Save</button><span id="dl-cron-msg" class="text-xs text-gray-500"></span></div>`)}
+      ${panel('Playlists to sync', `<div id="dl-pl" class="text-xs text-gray-500">Loading…</div>
+         <div class="flex items-center gap-2 mt-3"><button id="dl-pl-all" class="${btn} bg-gray-700 hover:bg-gray-600">Select all</button>
+         <button id="dl-pl-none" class="${btn} bg-gray-700 hover:bg-gray-600">None</button>
+         <button id="dl-pl-save" class="${btn} bg-indigo-600 hover:bg-indigo-500">Save selection</button><span id="dl-pl-msg" class="text-xs text-gray-500"></span></div>
+         <p class="text-[11px] text-gray-600 mt-2">None selected = all.</p>`)}
+      ${panel('History', '<div id="dl-runs" class="text-xs text-gray-500">Loading…</div>')}`;
+    wireDownloads();
+    refreshDlAuth(); refreshDlRun(); loadDlCron(); loadDlPlaylists(); loadDlRuns();
+    dlTimer = setInterval(() => { refreshDlRun(); }, 3000);
+}
+
+async function refreshDlAuth() {
+    const a = await fetch('/auth/status').then(r => r.json()).catch(() => ({}));
+    if (!$('dl-auth')) return;
+    $('dl-auth').textContent = a.authenticated ? '✓ Authenticated with YouTube Music' : (a.reason === 'expired' ? '⚠ Session expired — log in again' : 'Not logged in');
+    $('dl-auth').className = 'text-xs ' + (a.authenticated ? 'text-emerald-400' : 'text-yellow-400');
+    $('dl-login').classList.toggle('hidden', !!a.authenticated);
+    $('dl-logout').classList.toggle('hidden', !a.authenticated);
+}
+
+let dlWasRunning = false;
+async function refreshDlRun() {
+    if (!$('dl-run')) return clearInterval(dlTimer);
+    const [st, next] = await Promise.all([
+        fetch('/download-status').then(r => r.json()).catch(() => ({})),
+        fetch('/api/next-run').then(r => r.json()).catch(() => ({})),
+    ]);
+    const running = st.status === 'running';
+    $('dl-run').disabled = running; $('dl-run').classList.toggle('opacity-50', running);
+    $('dl-stop').classList.toggle('hidden', !running);
+    $('dl-state').textContent = running ? 'Running…' : 'Idle';
+    $('dl-next').textContent = next.delta || next.next_run ? 'Next run: ' + (next.delta || next.next_run) : '';
+    const logs = await fetch('/api/logs').then(r => r.json()).catch(() => []);
+    if (logs.length) {
+        const txt = await fetch('/logs/' + encodeURIComponent(logs[0])).then(r => r.text()).catch(() => '');
+        const pre = $('dl-log'); const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+        pre.textContent = txt || '(empty)'; if (atEnd) pre.scrollTop = pre.scrollHeight;
+    }
+    if (dlWasRunning && !running) { loadDlRuns(); refreshStats(); refreshSidebarPlaylists(); }   // run finished → history + library stats
+    dlWasRunning = running;
+}
+
+async function loadDlRuns() {
+    const runs = await fetch('/api/runs').then(r => r.json()).catch(() => []);
+    if (!$('dl-runs')) return;
+    $('dl-runs').innerHTML = runs.length ? runs.slice(0, 15).map(r => `
+        <div class="flex items-center gap-3 py-1.5 border-b border-gray-800 last:border-0">${badge(r.status)}
+        <span class="text-gray-300">${esc((r.timestamp || '').replace('T', ' ').slice(0, 19))} UTC</span>
+        <span class="text-gray-600">${esc(r.trigger || '')}</span>
+        <a class="ml-auto text-indigo-400 hover:text-indigo-300" target="_blank" href="/logs/${encodeURIComponent(r.log_name || '')}">log</a></div>`).join('')
+        : 'No runs yet.';
+}
+
+async function loadDlCron() {
+    const c = await fetch('/api/cron').then(r => r.json()).catch(() => ({}));
+    if ($('dl-cron')) $('dl-cron').value = c.expression || '';
+}
+
+let dlSelected = new Set();
+async function loadDlPlaylists() {
+    const box = $('dl-pl');
+    const [pls, sel] = await Promise.all([
+        fetch('/api/playlists').then(r => r.ok ? r.json() : Promise.reject(r.status)).catch(e => ({ error: e })),
+        fetch('/api/playlists/selection').then(r => r.json()).catch(() => ({ ids: [] })),
+    ]);
+    if (!$('dl-pl')) return;
+    if (!Array.isArray(pls)) { box.textContent = pls.error === 401 ? 'Log in to load your playlists.' : 'Could not load playlists.'; return; }
+    dlSelected = new Set(sel.ids || []);
+    box.innerHTML = pls.length ? pls.map(p => `
+        <label class="flex items-center gap-2 py-1 ${p.unsupported ? 'opacity-40' : 'cursor-pointer'}">
+        <input type="checkbox" data-pl="${esc(p.id)}" ${p.unsupported ? 'disabled' : ''} ${dlSelected.has(p.id) ? 'checked' : ''}>
+        <span class="text-sm text-gray-200">${esc(p.title)}</span><span class="text-gray-600">${p.count ?? ''}</span>${p.unsupported ? '<span class="text-gray-600">(not supported)</span>' : ''}</label>`).join('') : 'No playlists found.';
+}
+
+function wireDownloads() {
+    $('dl-login').onclick = () => $('dl-auth-form').classList.toggle('hidden');
+    $('dl-logout').onclick = async () => { await post('/auth/revoke', {}); refreshDlAuth(); loadDlPlaylists(); };
+    $('dl-save-auth').onclick = async () => {
+        const r = await post('/auth/headers', { headers_raw: $('dl-headers').value });
+        if (!r.ok) { $('dl-auth-err').textContent = (await r.text()).slice(0, 200); return; }
+        $('dl-auth-err').textContent = ''; $('dl-headers').value = ''; $('dl-auth-form').classList.add('hidden');
+        refreshDlAuth(); loadDlPlaylists();
+    };
+    $('dl-run').onclick = async () => { await post('/run-now', {}); refreshDlRun(); };
+    $('dl-stop').onclick = async () => { await post('/stop-now', {}); refreshDlRun(); };
+    $('dl-url-go').onclick = async () => {
+        const r = await post('/api/download-url', { url: $('dl-url').value }, true);
+        const d = await r.json().catch(() => ({}));
+        $('dl-url-err').textContent = r.ok ? '' : (d.error || 'Failed to start');
+        if (r.ok) { $('dl-url').value = ''; refreshDlRun(); }
+    };
+    $('dl-cron-save').onclick = async () => {
+        const r = await post('/api/cron', { expression: $('dl-cron').value }, true);
+        const d = await r.json().catch(() => ({}));
+        $('dl-cron-msg').textContent = r.ok ? 'Saved' : (d.error || 'Failed'); refreshDlRun();
+    };
+    const boxes = () => document.querySelectorAll('#dl-pl input[data-pl]:not(:disabled)');
+    $('dl-pl-all').onclick = () => boxes().forEach(b => b.checked = true);
+    $('dl-pl-none').onclick = () => boxes().forEach(b => b.checked = false);
+    $('dl-pl-save').onclick = async () => {
+        const ids = [...boxes()].filter(b => b.checked).map(b => b.dataset.pl);
+        const r = await post('/api/playlists/selection', { ids }, true);
+        $('dl-pl-msg').textContent = r.ok ? `Saved (${ids.length} selected)` : 'Failed to save';
+    };
+}
+
+// ── Library status / rescan ─────────────────────────────────────────────────
+async function refreshStats() {
+    try {
+        const s = await fetch('/api/library/stats').then(r => r.json());
+        const h = s.duration / 3600;
+        $('lib-stats').textContent = `${s.tracks} tracks · ${h >= 1 ? h.toFixed(1) + ' h' : Math.round(s.duration / 60) + ' min'}`;
+
+        if (!s.needs_tags && view === 'needs-tags') setView('library');
+    } catch {}
+}
+function scanSummary(r) {
+    const parts = [r.added && `${r.added} new`, r.updated && `${r.updated} updated`, r.removed && `${r.removed} removed`].filter(Boolean);
+    return parts.length ? parts.join(' · ') : 'Up to date';
+}
+async function pollScan() {
+    const s = await fetch('/api/library/scan-status').then(r => r.json()).catch(() => null);
+    if (!s) return;
+    $('rescan-btn').classList.toggle('spin', !!s.running);
+    if (s.running) { $('scan-msg').textContent = 'Scanning…'; setTimeout(pollScan, 1000); return; }
+    if (s.error) $('scan-msg').textContent = 'Scan failed: ' + s.error;
+    else if (s.result) { $('scan-msg').textContent = scanSummary(s.result); refreshStats(); refreshSidebarPlaylists(); if (['songs', 'needs-tags'].includes(view)) loadTracks(true); else if (view === 'playlists') renderPlaylists(); else if (view === 'home') renderHome(); else if (view === 'playlist') loadPlaylist(filter.id); }
+}
+$('rescan-btn').addEventListener('click', async () => { $('scan-msg').textContent = 'Scanning…'; $('rescan-btn').classList.add('spin'); await fetch('/api/library/rescan', { method: 'POST' }); pollScan(); });
+
+// ── Init ────────────────────────────────────────────────────────────────────
+audio.volume = store.get('vol', 80) / 100; $('volume').value = store.get('vol', 80);
+syncModeButtons();
+if (queue.length && qIdx >= 0 && queue[qIdx]) {           // restore last session paused at saved position
+    audio.src = `/api/stream/${queue[qIdx].id}`;
+    audio.addEventListener('loadedmetadata', () => { audio.currentTime = store.get('pos', 0); }, { once: true });
+    updateNowPlaying();
+} else renderQueue();
+(async () => {
+    const st = await fetch('/api/library/stats').then(r => r.json()).catch(() => ({ tracks: 0 }));
+    setView(!st.tracks || store.get('homeStartup', false) ? 'home' : 'library');
+    refreshStats(); refreshSidebarPlaylists(); refreshSortCounts(); pollScan();
+})();
+</script>
+</body>
+</html>
