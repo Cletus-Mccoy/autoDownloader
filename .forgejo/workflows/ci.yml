@@ -1,0 +1,34 @@
+name: ci
+
+# Runs the test suite on the homelab Forgejo runner, on every PR and on main.
+# Same checkout pattern as the homelab repos: jobs reach the forge through
+# FORGE_URL. pip goes through the runner's download cache (PIP_INDEX_URL is set
+# by the runner). The sorter's numpy/scikit-learn/joblib are installed; the
+# tests never load essentia, so the TensorFlow-sized wheel is left out.
+# No credentials belong in this file: the runner executes PR code.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: python312
+    steps:
+      - name: Checkout from the forge
+        run: |
+          set -euo pipefail
+          git clone -q "http://x-access-token:${{ github.token }}@${FORGE_URL#http://}/${{ github.repository }}.git" /work
+          cd /work
+          git fetch -q origin "${{ github.ref }}"
+          git checkout -q FETCH_HEAD
+
+      - name: Install
+        run: |
+          set -euo pipefail
+          cd /work/app
+          pip install -q --root-user-action=ignore -r requirements.txt numpy scikit-learn joblib
+
+      - name: Test
+        run: cd /work/app && python -m pytest -q -p no:warnings
