@@ -111,6 +111,21 @@ def test_relocate_moves_the_file_and_fixes_both_archives(downloads):
     assert MOVED in dst, "destination would fetch a file it already has"
 
 
+def test_relocate_one_follows_a_ui_move_at_once(downloads):
+    moved = hk.relocate_one(str(downloads), MOVED, "28_UNSORTED_TECH", "34_BOUNCE")
+    assert moved == {"28_UNSORTED_TECH/moved_to_bounce.mp3": "34_BOUNCE/moved_to_bounce.mp3"}
+    assert not (downloads / "28_UNSORTED_TECH" / "moved_to_bounce.mp3").exists()
+    assert MOVED not in hk.read_archive(str(downloads / "28_UNSORTED_TECH" / hk.ARCHIVE))
+    assert MOVED in hk.read_archive(str(downloads / "34_BOUNCE" / hk.ARCHIVE))
+    # the other tracks and their archive lines are untouched
+    assert KEEP in hk.read_archive(str(downloads / "28_UNSORTED_TECH" / hk.ARCHIVE))
+
+
+def test_relocate_one_without_a_file_does_nothing(downloads):
+    assert hk.relocate_one(str(downloads), WANTED, "28_UNSORTED_TECH", "34_BOUNCE") == {}
+    assert WANTED in hk.read_archive(str(downloads / "28_UNSORTED_TECH" / hk.ARCHIVE))
+
+
 def test_spare_and_double_and_removed_are_quarantined(downloads):
     report = _scan(downloads)
     _, quarantined, dest = hk.apply(report, base=str(downloads))

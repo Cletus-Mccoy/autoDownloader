@@ -24,18 +24,29 @@ def set_video_id(lib, playlist, video_id):
     return None
 
 
+def live_set_video_id(ytmusic, playlist_id, video_id):
+    """The placement id straight from YouTube, for when the cached library is
+    older than the placement (added since the last refresh, or moved here by
+    an earlier UI move, which leaves setVideoId empty)."""
+    for track in ytmusic.get_playlist(playlist_id, limit=None).get("tracks", []):
+        if track.get("videoId") == video_id and track.get("setVideoId"):
+            return track["setVideoId"]
+    return None
+
+
 def move_track(ytmusic, lib, video_id, source, target):
-    """Raises ValueError when the cached library lacks an id it needs, and
-    passes through whatever ytmusicapi raises."""
+    """Raises ValueError when an id it needs can't be found, and passes
+    through whatever ytmusicapi raises."""
     ids = playlist_ids(lib)
     target_id, source_id = ids.get(target), ids.get(source)
-    placement = set_video_id(lib, source, video_id)
     if not target_id:
         raise ValueError(f"unknown target playlist {target!r}")
     if not source_id:
         raise ValueError(f"unknown source playlist {source!r}")
+    placement = (set_video_id(lib, source, video_id)
+                 or live_set_video_id(ytmusic, source_id, video_id))
     if not placement:
-        raise ValueError("no setVideoId for this placement — refresh the library")
+        raise ValueError(f"the track is not in {source!r} on YouTube Music")
     ytmusic.add_playlist_items(target_id, [video_id], duplicates=False)
     ytmusic.remove_playlist_items(source_id, [{"videoId": video_id,
                                                "setVideoId": placement}])
@@ -54,8 +65,8 @@ def relocate_in_library(lib, video_id, source, target):
                 else:
                     keep.append(track)
             pl["tracks"] = keep
-    if moved is None:
-        return False
+    if moved is None:  # not in the cache (newer than it): record it in target anyway
+        moved = {"videoId": video_id}
     moved["setVideoId"] = None
     for pl in lib.get("playlists", []):
         if pl.get("title") == target:

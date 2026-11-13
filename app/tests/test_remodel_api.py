@@ -10,8 +10,13 @@ from vibe import moves
 
 
 class FakeYT:
-    def __init__(self, fail=False):
+    def __init__(self, fail=False, live=None):
         self.calls, self.fail = [], fail
+        self.live = live or {}  # playlistId -> tracks as YouTube lists them now
+
+    def get_playlist(self, pid, limit=None):
+        self.calls.append(("get", pid))
+        return {"tracks": self.live.get(pid, [])}
 
     def add_playlist_items(self, pid, ids, duplicates=False):
         if self.fail:
@@ -37,10 +42,24 @@ def test_move_track_adds_then_removes():
     assert yt.calls == [("add", "pb", ("v1",)), ("remove", "p240", (("v1", "s1"),))]
 
 
-def test_move_track_refuses_without_placement_id():
+def test_move_track_refuses_when_youtube_lacks_the_placement_too():
     lib = _lib(); lib["playlists"][0]["tracks"][0]["setVideoId"] = None
     with pytest.raises(ValueError):
         moves.move_track(FakeYT(), lib, "v1", "28. 240 SOUND", "28. BOUNCE")
+
+
+def test_move_track_asks_youtube_when_the_cache_is_older_than_the_placement():
+    # Added (or moved in) after the last library refresh: no setVideoId cached.
+    lib = _lib(); lib["playlists"][0]["tracks"] = []
+    yt = FakeYT(live={"p240": [{"videoId": "v9", "setVideoId": "s9"}]})
+    moves.move_track(yt, lib, "v9", "28. 240 SOUND", "28. BOUNCE")
+    assert yt.calls == [("get", "p240"), ("add", "pb", ("v9",)), ("remove", "p240", (("v9", "s9"),))]
+
+
+def test_relocate_in_library_records_a_track_the_cache_never_saw():
+    lib = _lib()
+    assert moves.relocate_in_library(lib, "v9", "28. 240 SOUND", "28. BOUNCE")
+    assert [t["videoId"] for t in lib["playlists"][1]["tracks"]] == ["v9"]
 
 
 def test_relocate_in_library_moves_membership():

@@ -14,7 +14,7 @@
                    font-size:13px; font-weight:600; color:#9ca3af; text-align:left; transition:background .1s,color .1s; }
         .nav-btn:hover { background:rgba(255,255,255,.05); color:#f3f4f6; }
         .nav-btn.active { background:#312e81; color:#fff; }
-        .row, .cols { display:grid; grid-template-columns: 2.5rem minmax(0,1fr) 3rem 3.5rem; gap:12px; align-items:center;
+        .row, .cols { display:grid; grid-template-columns: 2.5rem minmax(0,1fr) 3rem 5rem; gap:12px; align-items:center;
                padding:6px 12px; border-radius:8px; }
         .row { cursor:pointer; }
         .cols { position:sticky; top:-16px; z-index:5; background:#0a0f1a; padding-top:8px; padding-bottom:8px;
@@ -59,12 +59,12 @@
         .card:hover { background:#1f2937; border-color:#374151; }
         .c-idx, .c-artist, .c-album, .c-added { display:none; }
         @media (min-width: 768px) {
-            .row, .cols { grid-template-columns: 2rem 2.5rem minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 3rem 3.5rem; }
+            .row, .cols { grid-template-columns: 2rem 2.5rem minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 3rem 5rem; }
             .c-idx, .c-artist, .c-album { display:block; }
             .m-artist { display:none; }
         }
         @media (min-width: 1024px) {
-            .row, .cols { grid-template-columns: 2rem 2.5rem minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 5.5rem 3rem 3.5rem; }
+            .row, .cols { grid-template-columns: 2rem 2.5rem minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 5.5rem 3rem 5rem; }
             .c-added { display:block; }
         }
         .toast { position:fixed; left:50%; bottom:7rem; transform:translateX(-50%); background:#1f2937; border:1px solid #374151;
@@ -157,6 +157,7 @@
         </div>
     </div>
     <div class="hidden sm:flex items-center gap-2 w-1/4 justify-end">
+        <button id="ytmove-btn" class="tbtn hidden text-base" title="Move this track to another YouTube Music playlist" aria-label="Move to another playlist">⇄</button>
         <button id="queue-btn" class="tbtn" title="Queue" aria-label="Queue"></button>
         <span id="vol-icon" class="text-gray-500"></span>
         <input id="volume" type="range" min="0" max="100" value="80" class="w-24">
@@ -323,7 +324,7 @@ function appendRows(tracks, offset) {
             <div class="c-album text-xs text-gray-500 truncate">${esc(t.album)}</div>
             <div class="c-added text-xs text-gray-500">${t.added_at ? new Date(t.added_at * 1000).toLocaleDateString() : ''}</div>
             <div class="text-xs text-gray-500 text-right">${fmt(t.duration)}</div>
-            <div class="flex justify-end"><button class="row-act" data-act="add" title="Add to playlist">＋</button>${inLocalPl ? '<button class="row-act" data-act="rm" title="Remove from this playlist">✕</button>' : ''}</div>
+            <div class="flex justify-end">${t.source === 'ytmusic' ? '<button class="row-act" data-act="ytmove" title="Move to another YouTube Music playlist">⇄</button>' : ''}<button class="row-act" data-act="add" title="Add to playlist">＋</button>${inLocalPl ? '<button class="row-act" data-act="rm" title="Remove from this playlist">✕</button>' : ''}</div>
         </div>`).join('');
     $('rows').insertAdjacentHTML('beforeend', frag);
 }
@@ -619,6 +620,68 @@ async function pickPlaylist(trackId) {
     });
 }
 
+// Move a downloaded track to another YouTube Music playlist. The same move as
+// the sorter's review pages (it is a training label too); the file follows it
+// into the new playlist's folder at once and keeps its id, so it keeps playing.
+async function moveYouTube(track) {
+    const ov = document.createElement('div');
+    ov.className = 'fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4';
+    ov.innerHTML = `<div class="bg-gray-900 border border-gray-700 rounded-2xl p-4 w-full max-w-sm">
+        <div class="flex justify-between items-start gap-3 mb-1"><div class="min-w-0"><h3 class="font-bold text-sm">Move to playlist</h3>
+            <div class="text-xs text-gray-400 truncate">${esc(track.title || '')}${track.artist ? ' — ' + esc(track.artist) : ''}</div></div>
+            <button class="icon-btn" data-close aria-label="Close">✕</button></div>
+        <div id="ytm-body" class="text-xs text-gray-500 py-6 text-center">Looking it up…</div></div>`;
+    document.body.appendChild(ov);
+    const close = () => ov.remove();
+    ov.addEventListener('click', e => { if (e.target === ov || e.target.closest('[data-close]')) close(); });
+    const body = ov.querySelector('#ytm-body');
+
+    const r = await fetch(`/api/library/tracks/${track.id}/youtube`);
+    const info = await r.json().catch(() => ({}));
+    if (!r.ok) { body.textContent = info.error || 'Could not look this track up.'; return; }
+    const homes = info.playlists || [];
+    const from = info.folder_playlist || (homes.length === 1 ? homes[0] : null);
+    const targets = (info.all || []).filter(p => !homes.includes(p));
+    body.className = '';
+    body.innerHTML = `
+        <div class="text-[11px] text-gray-500 mt-2 mb-2">Now in <span class="text-gray-300">${homes.length ? homes.map(esc).join(', ') : 'no playlist'}</span></div>
+        ${homes.length > 1 && !info.folder_playlist ? `<label class="block text-[11px] text-gray-500 mb-2">Move it out of
+            <select id="ytm-from" class="field w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-gray-200">${homes.map(h => `<option>${esc(h)}</option>`).join('')}</select></label>` : ''}
+        <input id="ytm-q" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm mb-2" placeholder="Search playlists" aria-label="Search playlists" autocomplete="off">
+        <div id="ytm-list" class="max-h-72 overflow-y-auto flex flex-col gap-1"></div>
+        <div id="ytm-msg" class="text-xs mt-2 min-h-4"></div>`;
+    const list = body.querySelector('#ytm-list'), q = body.querySelector('#ytm-q'), msg = body.querySelector('#ytm-msg');
+    const draw = () => {
+        const s = q.value.trim().toLowerCase();
+        const shown = targets.filter(p => !s || p.toLowerCase().includes(s));
+        list.innerHTML = shown.map(p => `<button class="nav-btn text-left" data-target="${esc(p)}"><span class="truncate flex-1">${esc(p)}</span></button>`).join('')
+            || '<p class="text-xs text-gray-500 px-2 py-2">No playlist matches.</p>';
+    };
+    q.addEventListener('input', draw);
+    draw(); q.focus();
+
+    list.addEventListener('click', async e => {
+        const b = e.target.closest('[data-target]');
+        if (!b) return;
+        const target = b.dataset.target;
+        list.querySelectorAll('button').forEach(x => x.disabled = true);
+        msg.className = 'text-xs mt-2 min-h-4 text-gray-400'; msg.textContent = `Moving to ${target}…`;
+        const fromSel = body.querySelector('#ytm-from');
+        const res = await fetch(`/api/library/tracks/${track.id}/move`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target, from: fromSel ? fromSel.value : from }) });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            msg.className = 'text-xs mt-2 min-h-4 text-red-400'; msg.textContent = d.error || 'Move failed';
+            list.querySelectorAll('button').forEach(x => x.disabled = false);
+            return;
+        }
+        close();
+        toast(`Moved to ${target}`);
+        setTimeout(() => { refreshSidebarPlaylists(); if (view === 'playlist' && filter.id) loadPlaylist(filter.id); }, 1500);
+    });
+}
+$('ytmove-btn').addEventListener('click', () => { const t = queue[qIdx]; if (t) moveYouTube(t); });
+
 async function renderArtists() {
     const list = await fetch('/api/library/artists').then(r => r.json());
     $('content').innerHTML = list.length ? `<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">${list.map(a => `
@@ -684,6 +747,7 @@ function updateNowPlaying() {
         ? `<img id="np-art" class="w-14 h-14 rounded art" src="/api/art/${t.id}" alt="" onerror="this.style.visibility='hidden'">`
         : '<div id="np-art" class="w-14 h-14 rounded art"></div>';
     document.title = t ? `${t.title} — ${t.artist || 'Music'}` : 'Music Player';
+    $('ytmove-btn').classList.toggle('hidden', !(t && t.source === 'ytmusic'));
     document.querySelectorAll('.row').forEach(r => r.classList.toggle('playing', t && Number(r.dataset.id) === t.id));
     renderQueue();
     if ('mediaSession' in navigator && t) {
@@ -734,6 +798,7 @@ $('content').addEventListener('click', async e => {
     if (act) {
         const id = Number(act.closest('.row').dataset.id);
         if (act.dataset.act === 'add') return pickPlaylist(id);
+        if (act.dataset.act === 'ytmove') return moveYouTube(listTracks.find(t => t.id === id) || { id });
         await fetch(`/api/library/playlists/${filter.id}/tracks/${id}`, { method: 'DELETE' });
         refreshSidebarPlaylists(); return loadPlaylist(filter.id);
     }

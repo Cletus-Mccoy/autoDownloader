@@ -497,6 +497,7 @@ function renderReview() {
     const shown = list.slice(0, S.rv.shown);
     const opts = (any, names, value) => `<option value="">${any}</option>` + names.map(n => `<option value="${esc(n)}" ${value === n ? 'selected' : ''}>${esc(parts(n).code)} · ${esc(parts(n).label)}</option>`).join('');
     const names = o.playlists.slice().sort(byNumber);
+    const dests = (o.destinations && o.destinations.length ? o.destinations : o.playlists).slice().sort(byNumber);
     const kindBtn = (k, label, n) => `<button data-act="rvkind" data-k="${k}" class="chip ${S.rv.kind === k ? 'chip-accent' : 'chip-mute'} !px-3 !py-1">${label} <span class="opacity-60 num">${n}</span></button>`;
 
     const rows = shown.map((t, i) => {
@@ -515,6 +516,8 @@ function renderReview() {
                 <div class="text-[10px] text-gray-600 text-center mt-0.5">${t.kind === 'misfiled' ? 'misfiled' : 'on the border'}</div></div>
             <div class="flex gap-1.5 flex-none">
                 <button class="btn btn-primary" data-act="move" data-v="${esc(t.videoId)}" data-cur="${esc(t.current)}" title="Move to ${esc(t.other)}">Move</button>
+                <select class="field !py-1 w-[4.5rem]" data-act="moveto" data-v="${esc(t.videoId)}" data-cur="${esc(t.current)}" title="Move to another playlist" aria-label="Move to another playlist">
+                    <option value="">To…</option>${dests.filter(n => n !== t.current).map(n => `<option value="${esc(n)}">${esc(parts(n).code)} · ${esc(parts(n).label)}</option>`).join('')}</select>
                 <button class="btn btn-ghost" data-act="dismiss" data-v="${esc(t.videoId)}" data-cur="${esc(t.current)}" title="It belongs where it is" aria-label="Dismiss">✕</button></div>
         </div>`;
     }).join('');
@@ -715,6 +718,18 @@ async function move(videoId, current, target, rec, label) {
     return true;
 }
 
+// A review move: to the suggested playlist (Move) or any other one (To…).
+async function reviewMove(t, target, el) {
+    el.disabled = true;
+    if (!await move(t.videoId, t.current, target, t)) { el.disabled = false; if (el.tagName === 'SELECT') el.value = ''; return; }
+    S.moved.add(tkey(t)); S.movesMade++; render();
+    toast(`Moved to <b>${esc(parts(target).label)}</b>`, async () => {
+        if (await move(t.videoId, target, t.current, t)) {
+            S.moved.delete(tkey(t)); S.movesMade = Math.max(0, S.movesMade - 1); render(); toast('Moved back.');
+        }
+    });
+}
+
 // ── Events (one delegated listener) ───────────────────────────────────
 document.addEventListener('click', async e => {
     const el = e.target.closest('[data-act]');
@@ -752,14 +767,7 @@ document.addEventListener('click', async e => {
             render(); break; }
         case 'move': {
             const t = S.overlap.tracks.find(x => x.videoId === d.v && x.current === d.cur);
-            el.disabled = true;
-            if (!await move(t.videoId, t.current, t.other, t)) { el.disabled = false; break; }
-            S.moved.add(tkey(t)); S.movesMade++; render();
-            toast(`Moved to <b>${esc(parts(t.other).label)}</b>`, async () => {
-                if (await move(t.videoId, t.other, t.current, t)) {
-                    S.moved.delete(tkey(t)); S.movesMade = Math.max(0, S.movesMade - 1); render(); toast('Moved back.');
-                }
-            });
+            await reviewMove(t, t.other, el);
             break; }
         case 'undo': { const f = $('toast')._undo; $('toast').style.display = 'none'; if (f) f(); break; }
         case 'refresh': S.movesMade = 0; S.overlap = null; render(); loadOverlap(); break;
@@ -777,6 +785,11 @@ document.addEventListener('change', e => {
     const act = e.target.dataset && e.target.dataset.act;
     if (act === 'rvcur') { S.rv.current = e.target.value; S.rv.pair = null; S.rv.shown = 40; render(); }
     if (act === 'rvoth') { S.rv.other = e.target.value; S.rv.pair = null; S.rv.shown = 40; render(); }
+    if (act === 'moveto' && e.target.value) {
+        const d = e.target.dataset;
+        const t = S.overlap.tracks.find(x => x.videoId === d.v && x.current === d.cur);
+        if (t) reviewMove(t, e.target.value, e.target);
+    }
 });
 document.addEventListener('mouseover', e => {
     const el = e.target.closest('[data-tip]');

@@ -301,6 +301,38 @@ def _unique(path):
     return f"{stem}.{n}{ext}"
 
 
+def relocate_one(base, vid, from_folder, to_folder):
+    """Move one track's file from one playlist folder to another right away,
+    and fix both archives, so a move made in the UI is neither downloaded
+    again into the new folder nor left behind in the old one.
+
+    Returns {old relpath: new relpath} (relative to base, "/"-separated);
+    empty when the old folder has no file for this video (nothing to do; the
+    nightly run downloads it).
+    """
+    src_dir, dst_dir = os.path.join(base, from_folder), os.path.join(base, to_folder)
+    if not os.path.isdir(src_dir) or from_folder == to_folder:
+        return {}
+    names = sorted(n for n in os.listdir(src_dir)
+                   if n.lower().endswith(AUDIO_EXT)
+                   and video_id(os.path.join(src_dir, n)) == vid)
+    if not names:
+        return {}
+    os.makedirs(dst_dir, exist_ok=True)
+    moved = {}
+    for name in names:   # every copy: a double would otherwise stay behind
+        dst = _unique(os.path.join(dst_dir, name))
+        shutil.move(os.path.join(src_dir, name), dst)
+        moved[f"{from_folder}/{name}"] = os.path.relpath(dst, base).replace(os.sep, "/")
+    src_archive = os.path.join(src_dir, ARCHIVE)
+    write_archive(src_archive, [v for v in read_archive(src_archive) if v != vid])
+    dst_archive = os.path.join(dst_dir, ARCHIVE)
+    ids = read_archive(dst_archive)
+    if vid not in ids:
+        write_archive(dst_archive, ids + [vid])
+    return moved
+
+
 def apply(report, base=BASE_DIR, include_unexplained=False,
           include_ghosts=False, quarantine=None, dest_root=None):
     if dest_root is None:

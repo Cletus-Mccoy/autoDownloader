@@ -1185,8 +1185,9 @@ def sort_overlap():
     if state is None or state["value"] is None:
         return jsonify({"playlists": [], "stats": {}, "matrix": {},
                         "centroid_similarity": {}, "pairs": [], "tracks": [],
-                        "splits": {}})
-    return jsonify(_json_safe(state["value"]))
+                        "splits": {}, "destinations": []})
+    # Every playlist a review move may target, embedded or not yet.
+    return jsonify({**_json_safe(state["value"]), "destinations": sorted(_playlist_ids())})
 
 
 @app.route("/api/sort/split")
@@ -1272,31 +1273,41 @@ def sort_remodel_move():
                                  body.get("target"))
     if not video_id or not current or not target:
         return jsonify({"error": "videoId, current and target are required"}), 400
+    error = _move_between_playlists(video_id, current, target,
+                                    body.get("title"), body.get("artist"))
+    if error:
+        return jsonify({"error": error[0]}), error[1]
+    return jsonify({"ok": True})
+
+
+def _move_between_playlists(video_id, current, target, title=None, artist=None):
+    """Move one track on YouTube Music and record it everywhere a move counts:
+    the cached library, the moves ledger, the remodel decisions and the
+    decision log (a move is a training label). Returns None, or (error, status).
+
+    Shared by the misfiled review, the stats review and the player."""
     if target == current:
-        return jsonify({"error": "target is the current playlist"}), 400
+        return "target is the current playlist", 400
     if target not in _playlist_ids():
-        return jsonify({"error": f"unknown playlist {target!r}"}), 400
+        return f"unknown playlist {target!r}", 400
 
     lib = _read_json(VIBE_LIBRARY_FILE, None)
     if not lib:
-        return jsonify({"error": "no cached library"}), 500
+        return "no cached library", 500
     try:
         from scripts.ytmusic_auth import headers_to_ytmusic
         from scripts.vibe.moves import move_track, relocate_in_library
         move_track(headers_to_ytmusic(), lib, video_id, current, target)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return str(e), 500
 
     # Mirror the move in the cached library so the same track can't be moved
     # from a playlist it has just left, and the stats stay consistent.
     relocate_in_library(lib, video_id, current, target)
-    tmp = VIBE_LIBRARY_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(lib, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, VIBE_LIBRARY_FILE)
+    _save_library(lib)
 
-    record = {"videoId": video_id, "artist": body.get("artist"),
-              "title": body.get("title"), "current": current, "target": target}
+    record = {"videoId": video_id, "artist": artist,
+              "title": title, "current": current, "target": target}
     os.makedirs(os.path.dirname(MOVES_LEDGER_FILE), exist_ok=True)
     with open(MOVES_LEDGER_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps({**record, "source": "ui",
@@ -1305,9 +1316,95 @@ def sort_remodel_move():
     _record_remodel_decision(video_id, action="move", **{"from": current},
                              to=target)
     _log_decision({"kind": "remodel", "videoId": video_id, "playlist": target,
-                   "from": current, "title": body.get("title"),
-                   "artist": body.get("artist")})
-    return jsonify({"ok": True})
+                   "from": current, "title": title, "artist": artist})
+    return None
+
+
+# ── Player: move a downloaded track to another YouTube Music playlist ───────
+#
+# A download folder is one playlist (download.folder_name), and every file
+# carries its watch URL (--embed-metadata), so a library row leads back to a
+# videoId and the playlist it was downloaded for. The move is the same one the
+# review pages make; the file then follows it into the new folder at once,
+# instead of the nightly download fetching a second copy.
+
+def _player_track(track_id):
+    """(row, absolute path, videoId, folder) for a library track, or an error tuple."""
+    lib = get_library()
+    row = lib.get_track(track_id)
+    path = lib.resolve(row) if row else None
+    if not path or not os.path.exists(path):
+        return None, ("track not found", 404)
+    from scripts.housekeeping import video_id as file_video_id
+    vid = file_video_id(path)
+    if not vid:
+        return None, ("this file has no YouTube id (not downloaded from YouTube Music)", 400)
+    folder = row["relpath"].split("/", 1)[0] if "/" in row["relpath"] else None
+    return (row, path, vid, folder), None
+
+
+def _homes(video_id, folder):
+    """Playlists the track is in: the cached library, plus the playlist its
+    download folder belongs to (the cache can be older than the track)."""
+    from scripts.download import folder_name
+    titles = sorted(_playlist_ids())
+    homes = [p["title"] for p in (_read_json(VIBE_LIBRARY_FILE, {}) or {}).get("playlists", [])
+             if p["title"] in titles
+             and any(t.get("videoId") == video_id for t in p.get("tracks", []))]
+    by_folder = next((t for t in titles if folder and folder_name(t) == folder), None)
+    if by_folder and by_folder not in homes:
+        homes.append(by_folder)
+    return homes, by_folder, titles
+
+
+@app.route("/api/library/tracks/<int:track_id>/youtube")
+def player_track_youtube(track_id):
+    found, error = _player_track(track_id)
+    if error:
+        return jsonify({"error": error[0]}), error[1]
+    row, _, vid, folder = found
+    homes, by_folder, titles = _homes(vid, folder)
+    return jsonify({"videoId": vid, "playlists": homes, "folder_playlist": by_folder,
+                    "all": titles})
+
+
+@app.route("/api/library/tracks/<int:track_id>/move", methods=["POST"])
+def player_track_move(track_id):
+    body = request.json or {}
+    target = body.get("target")
+    if not target:
+        return jsonify({"error": "target is required"}), 400
+    found, error = _player_track(track_id)
+    if error:
+        return jsonify({"error": error[0]}), error[1]
+    row, _, vid, folder = found
+    homes, by_folder, _ = _homes(vid, folder)
+    current = body.get("from") or by_folder or (homes[0] if len(homes) == 1 else None)
+    if target in homes:
+        return jsonify({"error": f"already in {target}"}), 400
+    if not current:
+        return jsonify({"error": "the track is in several playlists; say which one to move it from",
+                        "playlists": homes}), 409
+    error = _move_between_playlists(vid, current, target, row["title"], row["artist"])
+    if error:
+        return jsonify({"error": error[0]}), error[1]
+
+    from scripts.download import folder_name
+    from scripts.housekeeping import relocate_one
+    relpath = None
+    if folder and folder == folder_name(current):
+        try:
+            moved = relocate_one(DOWNLOAD_DIR, vid, folder, folder_name(target))
+        except OSError as e:  # the YouTube move stands; the nightly run catches up
+            app.logger.warning("move %s: file not relocated: %s", vid, e)
+            moved = {}
+        if moved:
+            library = get_library()
+            for old, new in moved.items():   # same ids, so a playing track keeps playing
+                library.note_moved(row["root"], old, new)
+            relpath = moved.get(row["relpath"])
+            library.scan_async()             # rebuilds the folder playlists
+    return jsonify({"ok": True, "from": current, "to": target, "relpath": relpath})
 
 
 @app.route("/api/sort/remodel/keep", methods=["POST"])

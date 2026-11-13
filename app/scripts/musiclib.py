@@ -458,6 +458,20 @@ class Library:
             moves.append(entry)
         return {"moves": moves, "conflicts": conflicts, "already_ok": ok, "untagged": untagged}
 
+    def note_moved(self, root, src_rel, dst_rel):
+        """A file someone else already moved: point its row at the new path.
+        Keeps the track id, so the player's queue, history and local
+        playlists still find it. Returns False if no row had that path."""
+        with self._conn() as c:
+            r = c.execute("SELECT title, artist, album FROM tracks WHERE root=? AND relpath=?",
+                          (root, src_rel)).fetchone()
+            if r is None:
+                return False
+            search = " ".join((r["title"], r["artist"], r["album"], dst_rel)).lower()
+            c.execute("UPDATE tracks SET relpath=?, search=? WHERE root=? AND relpath=?",
+                      (dst_rel, search, root, src_rel))
+            return True
+
     def _move_row(self, c, root, src_rel, dst_rel):
         src, dst = os.path.join(root, src_rel), os.path.join(root, dst_rel)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
