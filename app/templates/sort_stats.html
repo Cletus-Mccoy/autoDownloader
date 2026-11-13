@@ -35,11 +35,11 @@
         .bar { height:6px; border-radius:99px; background:#1f2937; overflow:hidden; }
         .bar > i { display:block; height:100%; border-radius:99px; }
         .heat { display:grid; gap:2px; }
-        .cell { aspect-ratio:1; min-height:18px; border-radius:4px; cursor:pointer; border:0; padding:0; transition:transform .08s; }
+        .cell { width:16px; height:16px; border-radius:3px; cursor:pointer; border:0; padding:0; transition:transform .08s; }
         .cell:hover { transform:scale(1.25); position:relative; z-index:2; outline:1px solid #fff; }
-        .rowlab { font-size:11px; color:#9ca3af; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:right; padding-right:8px; display:flex; align-items:center; justify-content:flex-end; }
+        .rowlab { font-size:10.5px; line-height:16px; color:#9ca3af; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:right; padding-right:8px; display:flex; align-items:center; justify-content:flex-end; }
         .rowlab.on, .collab.on { color:#fff; font-weight:700; }
-        .collab { font-size:10px; color:#6b7280; text-align:center; }
+        .collab { font-size:9px; line-height:16px; color:#6b7280; text-align:center; }
         th.sortable { cursor:pointer; user-select:none; }
         th.sortable:hover { color:#e5e7eb; }
         #tip { position:fixed; pointer-events:none; z-index:80; background:#030712; border:1px solid #374151; border-radius:8px; padding:6px 9px; font-size:11px; color:#e5e7eb; max-width:300px; box-shadow:0 8px 24px rgba(0,0,0,.5); display:none; }
@@ -247,75 +247,74 @@ function renderOverview() {
         return empty('No model yet', 'Run <code class="bg-gray-800 px-1.5 py-0.5 rounded">vibe_train.py</code> to train the sorter.');
     }
     const trained = m.trained_at.slice(0, 16).replace('T', ' ');
-    let h = `<div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-        ${tile('Placed on its own', pct(a.automation_rate), `${a.auto} of ${a.placed} placements`, 'text-indigo-400')}
-        ${tile('Waiting for you', a.queued, 'in the review queue')}
-        ${tile('You sorted', a.manual, a.skipped ? `${a.skipped} left alone` : 'by hand')}
-        ${tile('Routable playlists', `${m.routable}<span class="text-gray-600 text-xl">/${m.playlists}</span>`, `at ≥ ${pct(m.target_precision)} precision`)}
-    </div>`;
 
-    // What to do next, derived from the data below. The point of the page is
-    // decisions, so it leads with them.
-    const todo = attentionItems();
-    if (todo.length) {
-        h += section('Worth your attention', 'Generated from the numbers on the other tabs.',
-            `<div class="grid md:grid-cols-2 gap-3">${todo.map((t, i) => `
-                <button data-act="goto" data-i="${i}" ${t.tab ? '' : 'disabled'}
-                    class="text-left p-3.5 rounded-xl border border-gray-800 ${t.tab ? 'hover:border-indigo-500/60 hover:bg-gray-800/40' : 'cursor-default'} transition-colors">
-                    <div class="flex items-center gap-2 mb-1"><span class="chip ${TONE[t.tone]}">${t.tab ? t.tab : 'info'}</span>
-                    ${t.tab ? '<span class="text-gray-600 text-xs ml-auto">→</span>' : ''}</div>
-                    <div class="text-[13px] text-gray-100 font-medium">${t.title}</div>
-                    <div class="text-[12px] text-gray-500 mt-0.5">${t.body}</div>
-                </button>`).join('')}</div>`);
-        S._todo = todo;
-    }
-
-    // Honest estimate leads the model section: it is the number to trust.
-    let honest = '';
+    // One card for the headline numbers and the model behind them. The honest
+    // (nested) precision is the number to trust, so it sits in the model line.
+    let honestPct = '—', stable = null;
     if (d.nested && d.nested.length) {
-        const stable = d.nested.filter(r => r.folds_qualifying === r.outer_folds).length;
+        stable = d.nested.filter(r => r.folds_qualifying === r.outer_folds).length;
         const scored = d.nested.filter(r => r.precision !== null);
         const acc = scored.reduce((s, r) => s + r.accepted, 0);
         const cor = scored.reduce((s, r) => s + r.precision * r.accepted, 0);
-        honest = `<div class="rounded-xl p-4 mb-4" style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2)">
-            <div class="eyebrow" style="color:#d97706">Honest estimate · what to expect on new tracks</div>
-            <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1 mt-1">
-                <div><span class="text-2xl font-semibold num">${acc ? pct(cor / acc, 1) : '—'}</span> <span class="text-xs text-gray-400">precision on held-out data</span></div>
-                <div><span class="text-2xl font-semibold num">${stable}</span> <span class="text-xs text-gray-400">playlists qualify in every fold</span></div>
-            </div>
-            ${help('Thresholds here are picked on data they never score. The per-playlist figures elsewhere pick and score on the same data, which flatters them.')}
-        </div>`;
+        if (acc) honestPct = pct(cor / acc, 1);
     }
-    const meter = (label, v, tone) => `<div>
-        <div class="flex justify-between text-xs mb-1"><span class="text-gray-400">${label}</span><span class="num text-gray-200">${pct(v, 1)}</span></div>
-        <div class="bar"><i style="width:${(v || 0) * 100}%;background:${tone}"></i></div></div>`;
-    h += section('Model', `Trained on ${m.n_train} tracks · ${trained}`, `${honest}
-        <div class="grid sm:grid-cols-2 gap-5">${meter('Top-1: first guess is right', m.top1, '#818cf8')}${meter('Top-3: right one is among the three offered', m.top3, '#34d399')}</div>
-        ${help('The gap between them is why a review queue works: picking from three is usually enough.')}`);
+    const kpi = (label, value, note, tip, accent = 'text-white') => `<div class="min-w-0" ${tip ? `data-tip="${esc(tip)}"` : ''}>
+        <div class="eyebrow">${label}</div>
+        <div class="text-2xl font-semibold num ${accent} leading-tight">${value}</div>
+        <div class="text-[11px] text-gray-500 truncate">${note}</div></div>`;
+    const stat = (label, value, tip) => `<span ${tip ? `data-tip="${esc(tip)}"` : ''}><span class="text-gray-500">${label}</span> <b class="num text-gray-200">${value}</b></span>`;
+    let h = `<section class="card p-4 mb-4">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            ${kpi('Placed on its own', pct(a.automation_rate), `${a.auto} of ${a.placed} placements`, '', 'text-indigo-400')}
+            ${kpi('Waiting for you', a.queued, 'in the review queue')}
+            ${kpi('You sorted', a.manual, a.skipped ? `${a.skipped} left alone` : 'by hand')}
+            ${kpi('Routable playlists', `${m.routable}<span class="text-gray-600 text-base">/${m.playlists}</span>`, `at ≥ ${pct(m.target_precision)} precision`)}
+        </div>
+        <div class="flex flex-wrap gap-x-5 gap-y-1 text-xs mt-3 pt-3 border-t border-gray-800">
+            <span class="text-gray-400">Model · ${m.n_train} tracks · ${esc(trained)}</span>
+            ${stat('honest precision', honestPct, 'Measured on held-out tracks, with thresholds picked on data they never score. The number to expect on new tracks.')}
+            ${stable !== null ? stat('stable playlists', stable, 'Playlists that qualify for automatic placement in every fold.') : ''}
+            ${stat('top-1', pct(m.top1, 1), 'First guess is right.')}
+            ${stat('top-3', pct(m.top3, 1), 'The right playlist is among the three offered. The gap to top-1 is why the review queue works.')}
+        </div></section>`;
+
+    // What to do next, derived from the data on the other tabs: one line each.
+    const todo = attentionItems();
+    if (todo.length) {
+        h += `<section class="card mb-4 overflow-hidden"><div class="eyebrow px-4 pt-3 pb-1">Worth your attention</div>
+            ${todo.map((t, i) => `
+                <button data-act="goto" data-i="${i}" ${t.tab ? '' : 'disabled'}
+                    class="w-full text-left flex items-center gap-3 px-4 py-2 border-t border-gray-800/70 ${t.tab ? 'hover:bg-gray-800/40' : 'cursor-default'} transition-colors">
+                    <span class="chip ${TONE[t.tone]} w-16 justify-center flex-none">${t.tab ? t.tab : 'info'}</span>
+                    <span class="min-w-0 flex-1 truncate"><span class="text-[13px] text-gray-100">${t.title}</span>
+                        <span class="text-[12px] text-gray-500 ml-2">${t.body}</span></span>
+                    ${t.tab ? '<span class="text-gray-600 text-xs flex-none">→</span>' : ''}
+                </button>`).join('')}</section>`;
+        S._todo = todo;
+    }
 
     // Pipeline as a single stacked bar: every liked track is in exactly one stage.
     const inQueue = Math.max(0, (p.unsorted || 0) - (p.awaiting_embedding || 0));
     const total = p.liked || 1;
     const seg = (n, color, label) => n > 0 ? `<i style="width:${n / total * 100}%;background:${color}" title="${label}: ${n}"></i>` : '';
-    const embedRows = Object.entries(p.embedded || {}).map(([k, n]) => `${esc(k)} <b class="text-gray-300 num">${n ?? '?'}</b>`).join(' · ');
-    h += section('Pipeline', 'Where every liked track is: fetch → embed → place.', `
-        <div class="bar !h-3 flex mb-3">${seg(p.filed, '#6366f1', 'In playlists')}${seg(inQueue, '#38bdf8', 'In the review queue')}${seg(p.awaiting_embedding, '#f59e0b', 'Awaiting snippet')}</div>
-        <div class="flex flex-wrap gap-x-6 gap-y-2 text-xs">
-            <span><i class="inline-block w-2 h-2 rounded-sm mr-1.5" style="background:#6366f1"></i><span class="text-gray-500">In playlists</span> <b class="num text-gray-200">${p.filed ?? '—'}</b></span>
-            <span><i class="inline-block w-2 h-2 rounded-sm mr-1.5" style="background:#38bdf8"></i><span class="text-gray-500">In queue</span> <b class="num text-gray-200">${inQueue}</b></span>
-            <span><i class="inline-block w-2 h-2 rounded-sm mr-1.5" style="background:#f59e0b"></i><span class="text-gray-500">Awaiting snippet</span> <b class="num text-gray-200">${p.awaiting_embedding ?? 0}</b></span>
-            <span class="text-gray-600">of ${p.liked ?? '—'} liked</span>
-        </div>
-        <div class="grid sm:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-800 text-xs">
-            <div><div class="text-gray-500">Snippets cached</div><div class="num text-gray-200">${p.audio_files ?? '—'} <span class="text-gray-600">· ${p.audio_mb ?? 0} MB</span></div></div>
-            <div><div class="text-gray-500">Embedded</div><div class="text-gray-200">${embedRows || 'none yet'}</div></div>
-            <div><div class="text-gray-500">Nightly fetch</div><div class="num text-gray-200">${p.nightly_cap ? p.nightly_cap + ' tracks' : '—'}${p.queue_generated_at ? `<span class="text-gray-600"> · queue ${esc(p.queue_generated_at.slice(5, 16).replace('T', ' '))} UTC</span>` : ''}</div></div>
-        </div>`);
+    const embedRows = Object.entries(p.embedded || {}).map(([k, n]) => `${esc(k)} ${n ?? '?'}`).join(' · ');
+    const legend = (color, label, n) => `<span><i class="inline-block w-2 h-2 rounded-sm mr-1.5" style="background:${color}"></i><span class="text-gray-500">${label}</span> <b class="num text-gray-200">${n}</b></span>`;
+    const pipeline = `<section class="card p-4">
+        <div class="flex items-baseline justify-between mb-2"><span class="eyebrow">Pipeline</span><span class="text-[11px] text-gray-600">${p.liked ?? '—'} liked</span></div>
+        <div class="bar !h-3 flex mb-2">${seg(p.filed, '#6366f1', 'In playlists')}${seg(inQueue, '#38bdf8', 'In the review queue')}${seg(p.awaiting_embedding, '#f59e0b', 'Awaiting snippet')}</div>
+        <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">${legend('#6366f1', 'In playlists', p.filed ?? '—')}${legend('#38bdf8', 'In queue', inQueue)}${legend('#f59e0b', 'Awaiting snippet', p.awaiting_embedding ?? 0)}</div>
+        <div class="text-[11px] text-gray-500 mt-2 truncate" data-tip="${esc(`Snippets cached: ${p.audio_files ?? '—'} (${p.audio_mb ?? 0} MB)<br>Embedded: ${embedRows || 'none yet'}<br>Nightly fetch: ${p.nightly_cap ? p.nightly_cap + ' tracks' : '—'}`)}">
+            ${p.audio_files ?? '—'} snippets · ${p.audio_mb ?? 0} MB · nightly ${p.nightly_cap ?? '—'}${p.queue_generated_at ? ` · queue ${esc(p.queue_generated_at.slice(5, 16).replace('T', ' '))} UTC` : ''}</div>
+    </section>`;
 
+    let activity = '';
     if (d.by_day && d.by_day.length > 1) {
         const max = Math.max(...d.by_day.map(x => x.auto + x.manual), 1);
-        h += section('Recent activity', 'Placements per day.', `
-            <div class="flex items-end gap-1.5 h-24" role="img" aria-label="Placements per day">
+        activity = `<section class="card p-4">
+            <div class="flex items-baseline justify-between mb-2"><span class="eyebrow">Placements per day</span>
+                <span class="text-[11px] text-gray-500"><i class="inline-block w-2 h-2 rounded-sm mr-1" style="background:#6366f1"></i>automatic
+                <i class="inline-block w-2 h-2 rounded-sm mr-1 ml-2" style="background:#4b5563"></i>by hand</span></div>
+            <div class="flex items-end gap-1 h-16" role="img" aria-label="Placements per day">
                 ${d.by_day.map(x => {
                     const t = x.auto + x.manual, ht = Math.max(3, t / max * 100), as = t ? x.auto / t * 100 : 0;
                     return `<div class="flex-1 flex flex-col justify-end h-full cursor-default" data-tip="<b>${esc(x.day)}</b><br>${x.auto} automatic · ${x.manual} by hand">
@@ -324,10 +323,9 @@ function renderOverview() {
                 }).join('')}
             </div>
             <div class="flex justify-between text-[10px] text-gray-600 mt-1"><span>${esc(d.by_day[0].day.slice(5))}</span><span>${esc(d.by_day[d.by_day.length - 1].day.slice(5))}</span></div>
-            <div class="flex gap-4 mt-2 text-[11px] text-gray-500">
-                <span><i class="inline-block w-2 h-2 rounded-sm mr-1" style="background:#6366f1"></i>automatic</span>
-                <span><i class="inline-block w-2 h-2 rounded-sm mr-1" style="background:#4b5563"></i>by hand</span></div>`);
+        </section>`;
     }
+    h += `<div class="grid ${activity ? 'lg:grid-cols-2' : ''} gap-4 mb-4">${pipeline}${activity}</div>`;
     return h;
 }
 
@@ -443,7 +441,7 @@ function renderOverlap() {
             <button data-act="heatorder" data-k="number" class="chip ${S.heatOrder === 'number' ? 'chip-accent' : 'chip-mute'} !px-3 !py-1">By number</button>
             ${f ? `<button data-act="unfocus" class="btn btn-ghost ml-auto">Clear focus: ${esc(parts(f).label)} ✕</button>` : ''}
         </div>
-        <div class="overflow-x-auto"><div class="heat" style="grid-template-columns:minmax(120px,190px) repeat(${k},minmax(20px,1fr));min-width:${160 + k * 24}px">${cells}</div></div>
+        <div class="overflow-x-auto"><div class="heat w-max" style="grid-template-columns:minmax(90px,150px) repeat(${k},16px)">${cells}</div></div>
         <div class="flex flex-wrap items-center gap-4 mt-3 text-[11px] text-gray-500">
             <span><i class="inline-block w-3 h-3 rounded mr-1.5 align-middle" style="background:rgba(99,102,241,.8)"></i>stays home</span>
             <span><i class="inline-block w-3 h-3 rounded mr-1.5 align-middle" style="background:rgba(245,158,11,.8)"></i>crosses over (darker = more)</span>
@@ -451,24 +449,27 @@ function renderOverlap() {
         </div>
         ${help('This is the playlists\' layout in sound, not the classifier\'s opinion: every track is compared to each playlist\'s average sound, with the track left out of its own playlist\'s average so it can\'t vouch for itself.')}`);
 
-    const pairs = o.pairs.filter(p => p.verdict !== 'distinct').slice(0, 12);
-    const pairCards = pairs.length ? `<div class="grid lg:grid-cols-2 gap-3">${pairs.map((p, i) => {
+    // One line per pair, the strongest first; the rest behind "show all".
+    const allPairs = o.pairs.filter(p => p.verdict !== 'distinct');
+    const pairs = S.allPairs ? allPairs : allPairs.slice(0, 6);
+    const pairRows = pairs.length ? pairs.map((p, i) => {
         const [cls, label, why] = VERDICT[p.verdict];
-        const dir = (name, v) => `<div class="flex items-center gap-2 text-[11px]"><span class="text-gray-500 w-24 truncate">${esc(parts(name).label)}</span>
-            <div class="bar flex-1"><i style="width:${Math.min(100, v * 100 * 2)}%;background:#f59e0b"></i></div><span class="num text-gray-300 w-9 text-right">${pct(v)}</span></div>`;
-        return `<div class="rounded-xl border border-gray-800 p-3.5">
-            <div class="flex items-center gap-2 mb-2"><span class="chip ${cls}" title="${esc(why)}">${label}</span>
-                <span class="text-[11px] text-gray-500 ml-auto num">centres ${p.similarity.toFixed(2)} alike</span></div>
-            <div class="text-[13px] text-gray-100 font-medium mb-2">${esc(parts(p.a).label)} <span class="text-gray-600">↔</span> ${esc(parts(p.b).label)}</div>
-            ${dir(p.a, p.a_to_b)}${dir(p.b, p.b_to_a)}
-            <div class="text-[11px] text-gray-500 mt-2">${esc(why)}</div>
-            <div class="flex gap-2 mt-3"><button class="btn" data-act="pair-review" data-i="${i}">Review border tracks</button>
-                <button class="btn btn-ghost" data-act="focus" data-name="${esc(p.a)}">Focus map</button></div>
-        </div>`; }).join('')}</div>` : `<div class="text-xs text-gray-500">No pair stands out: your playlists are well separated.</div>`;
+        return `<div class="py-2 border-t border-gray-800/70 first:border-t-0"
+                     data-tip="${esc(`<b>${label}</b>: ${why}<br>${pct(p.a_to_b)} of ${parts(p.a).label} sounds like ${parts(p.b).label}; ${pct(p.b_to_a)} the other way. Centres ${p.similarity.toFixed(2)} alike.`)}">
+            <div class="flex items-center gap-2">
+                <span class="chip ${cls}">${label}</span>
+                <span class="num text-[11px] text-gray-400 ml-auto">${pct(p.a_to_b)} · ${pct(p.b_to_a)}</span></div>
+            <div class="flex items-center gap-1.5 mt-1">
+                <span class="min-w-0 flex-1 text-[12px] text-gray-100 truncate">${esc(parts(p.a).label)} <span class="text-gray-600">↔</span> ${esc(parts(p.b).label)}</span>
+                <button class="btn !px-2 !py-0.5 flex-none" data-act="pair-review" data-i="${i}" title="Review the border tracks">Review</button>
+                <button class="btn btn-ghost !px-1.5 !py-0.5 flex-none" data-act="focus" data-name="${esc(p.a)}" title="Highlight on the map" aria-label="Focus map">◎</button></div>
+        </div>`; }).join('') : `<div class="text-xs text-gray-500">No pair stands out: your playlists are well separated.</div>`;
     S._pairs = pairs;
+    const more = allPairs.length > 6
+        ? `<button class="btn btn-ghost mt-2" data-act="allpairs">${S.allPairs ? 'Show fewer' : `Show all ${allPairs.length}`}</button>` : '';
 
-    return heat + section('Pairs worth a decision', 'Playlist pairs ranked by how many tracks cross between them.', pairCards,
-        '<span class="text-[11px] text-gray-600">bars show the share of each playlist\'s tracks nearer the other</span>');
+    return `<div class="grid xl:grid-cols-[auto_minmax(0,1fr)] gap-5 items-start">${heat}
+        ${section('Pairs worth a decision', 'Ranked by how many tracks cross between them. Hover a row for details.', pairRows + more)}</div>`;
 }
 
 // ── Review ────────────────────────────────────────────────────────────
@@ -753,6 +754,7 @@ document.addEventListener('click', async e => {
         case 'focus': S.focus = d.name; go('overlap'); break;
         case 'unfocus': S.focus = null; render(); break;
         case 'heatorder': S.heatOrder = d.k; render(); break;
+        case 'allpairs': S.allPairs = !S.allPairs; render(); break;
         case 'cell':
             if (d.r === d.c) { S.focus = d.r; render(); break; }
             S.rv = {kind: 'all', current: d.r, other: d.c, q: '', shown: 40}; go('review'); break;

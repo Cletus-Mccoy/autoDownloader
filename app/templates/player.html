@@ -89,7 +89,7 @@
             <button class="nav-btn sort-item" data-path="/sort" data-title="New likes"><span class="flex-1">New likes</span><span class="sort-count hidden" data-count="queue"></span></button>
             <button class="nav-btn sort-item" data-path="/sort/misfiled" data-title="Misfiled"><span class="flex-1">Misfiled</span><span class="sort-count hidden" data-count="misfiled"></span></button>
             <button class="nav-btn sort-item" data-path="/sort/duplicates" data-title="Duplicates"><span class="flex-1">Duplicates</span><span class="sort-count hidden" data-count="dupes"></span></button>
-            <button class="nav-btn sort-item" data-path="/sort/stats" data-title="Sorter stats"><span class="flex-1">Stats</span></button>
+            <button class="nav-btn sort-item" data-path="/sort/stats" data-title="Sorter stats"><span class="flex-1">Sorter</span></button>
         </nav>
         <nav class="flex flex-col gap-1">
             <p class="px-3 text-[10px] uppercase tracking-wider text-gray-600 mb-1">Manage</p>
@@ -157,6 +157,7 @@
         </div>
     </div>
     <div class="hidden sm:flex items-center gap-2 w-1/4 justify-end">
+        <button id="np-pl" class="hidden min-w-0 max-w-[11rem] truncate text-xs text-gray-400 hover:text-white px-2 py-1 rounded-md border border-gray-800 hover:border-gray-600" title="The playlist this track is in. Click to move it."></button>
         <button id="ytmove-btn" class="tbtn hidden text-base" title="Move this track to another YouTube Music playlist" aria-label="Move to another playlist">⇄</button>
         <button id="queue-btn" class="tbtn" title="Queue" aria-label="Queue"></button>
         <span id="vol-icon" class="text-gray-500"></span>
@@ -677,10 +678,16 @@ async function moveYouTube(track) {
         }
         close();
         toast(`Moved to ${target}`);
+        // The file moved folders: every copy of this track in the queue and the
+        // list follows, so the player bar names the new playlist at once.
+        if (d.relpath) [...queue, ...listTracks].forEach(x => { if (x.id === track.id) x.relpath = d.relpath; });
+        track.relpath = d.relpath || track.relpath;
+        updateNowPlaying();
         setTimeout(() => { refreshSidebarPlaylists(); if (view === 'playlist' && filter.id) loadPlaylist(filter.id); }, 1500);
     });
 }
 $('ytmove-btn').addEventListener('click', () => { const t = queue[qIdx]; if (t) moveYouTube(t); });
+$('np-pl').addEventListener('click', () => { const t = queue[qIdx]; if (t) moveYouTube(t); });
 
 async function renderArtists() {
     const list = await fetch('/api/library/artists').then(r => r.json());
@@ -748,6 +755,11 @@ function updateNowPlaying() {
         : '<div id="np-art" class="w-14 h-14 rounded art"></div>';
     document.title = t ? `${t.title} — ${t.artist || 'Music'}` : 'Music Player';
     $('ytmove-btn').classList.toggle('hidden', !(t && t.source === 'ytmusic'));
+    // The download folder is the playlist (its name with spaces for underscores,
+    // as the folder playlists show it).
+    const folder = t && t.source === 'ytmusic' && (t.relpath || '').includes('/') ? t.relpath.split('/')[0] : '';
+    $('np-pl').textContent = folder.replace(/_/g, ' ');
+    $('np-pl').classList.toggle('hidden', !folder);
     document.querySelectorAll('.row').forEach(r => r.classList.toggle('playing', t && Number(r.dataset.id) === t.id));
     renderQueue();
     if ('mediaSession' in navigator && t) {
@@ -891,12 +903,29 @@ const post = (url, body, json) => fetch(url, { method: 'POST',
     body: json ? JSON.stringify(body) : new URLSearchParams(body) });
 const btn = 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors';
 const panel = (title, inner) => `<section class="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4"><h3 class="text-sm font-bold mb-3">${title}</h3>${inner}</section>`;
+// A collapsible panel for Manage downloads: closed by default, the header
+// keeps its one-line status, and the open/closed state is remembered.
+const dlOpen = new Set(store.get('dlOpen', []));
+const fold = (key, title, sum, inner) => `<details class="dl-fold bg-gray-900 border border-gray-800 rounded-xl mb-3 group" data-key="${key}" ${dlOpen.has(key) ? 'open' : ''}>
+    <summary class="flex items-center gap-3 px-4 py-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+        <svg class="w-3 h-3 text-gray-500 flex-none transition-transform group-open:rotate-90" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>
+        <h3 class="text-sm font-bold flex-none">${title}</h3>
+        <span class="min-w-0 flex-1 flex items-center gap-3 justify-end text-xs text-gray-400 truncate">${sum}</span></summary>
+    <div class="px-4 pb-4">${inner}</div></details>`;
+function wireFolds() {
+    document.querySelectorAll('.dl-fold').forEach(d => d.addEventListener('toggle', () => {
+        d.open ? dlOpen.add(d.dataset.key) : dlOpen.delete(d.dataset.key);
+        store.set('dlOpen', [...dlOpen]);
+        if (d.open && d.dataset.key === 'run') refreshDlRun();
+    }));
+}
+const isOpen = key => !!document.querySelector(`.dl-fold[data-key="${key}"][open]`);
 const badge = st => `<span class="px-2 py-0.5 rounded text-[10px] font-semibold ${({success:'bg-emerald-900 text-emerald-300',failed:'bg-red-900 text-red-300',stopped:'bg-yellow-900 text-yellow-300'})[st] || 'bg-gray-800 text-gray-400'}">${esc(st)}</span>`;
 let dlLogName = null;
 
 function renderDownloads() {
     $('content').innerHTML = `
-      ${panel('Account', `<div class="flex items-center gap-3 flex-wrap"><span id="dl-auth" class="text-xs text-gray-400">Checking…</span>
+      ${fold('account', 'Account', '<span id="dl-auth" class="text-xs text-gray-400">Checking…</span>', `<div class="flex items-center gap-3 flex-wrap">
          <button id="dl-login" class="${btn} bg-indigo-600 hover:bg-indigo-500">Login</button>
          <button id="dl-logout" class="${btn} bg-gray-700 hover:bg-gray-600 hidden">Logout</button>
          <a href="/downloads" target="_blank" class="ml-auto text-xs text-indigo-400 hover:text-indigo-300 font-semibold">Full dashboard ↗</a></div>
@@ -904,22 +933,21 @@ function renderDownloads() {
            <p class="text-xs text-gray-500 mb-2">Paste request headers from music.youtube.com (DevTools → Network).</p>
            <textarea id="dl-headers" rows="6" class="w-full bg-gray-950 border border-gray-700 rounded-lg p-2 text-xs font-mono focus:outline-none focus:border-indigo-500"></textarea>
            <div class="flex gap-2 mt-2"><button id="dl-save-auth" class="${btn} bg-indigo-600 hover:bg-indigo-500">Save</button><span id="dl-auth-err" class="text-xs text-red-400 self-center"></span></div></div>`)}
-      ${panel('Run', `<div class="flex items-center gap-2 flex-wrap">
+      ${fold('run', 'Run', '<span id="dl-state"></span><span id="dl-next" class="text-gray-500"></span>', `<div class="flex items-center gap-2 flex-wrap">
          <button id="dl-run" class="${btn} bg-emerald-600 hover:bg-emerald-500">Run now</button>
-         <button id="dl-stop" class="${btn} bg-red-700 hover:bg-red-600 hidden">Stop</button>
-         <span id="dl-state" class="text-xs text-gray-400"></span><span id="dl-next" class="text-xs text-gray-500 ml-auto"></span></div>
+         <button id="dl-stop" class="${btn} bg-red-700 hover:bg-red-600 hidden">Stop</button></div>
          <div class="flex gap-2 mt-3"><input id="dl-url" type="url" placeholder="Download a single track or playlist URL…" class="flex-1 bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-sm placeholder-gray-600 focus:outline-none focus:border-indigo-500">
          <button id="dl-url-go" class="${btn} bg-indigo-600 hover:bg-indigo-500">Download</button></div><div id="dl-url-err" class="text-xs text-red-400 mt-1"></div>
          <pre id="dl-log" class="mt-3 bg-gray-950 border border-gray-800 rounded-lg p-3 text-[11px] text-gray-400 h-56 overflow-auto whitespace-pre-wrap">No log yet.</pre>`)}
-      ${panel('Schedule', `<div class="flex items-center gap-2 flex-wrap"><input id="dl-cron" class="w-48 bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-indigo-500" placeholder="min hour dom mon dow">
+      ${fold('schedule', 'Schedule', '<span id="dl-cron-sum" class="font-mono"></span>', `<div class="flex items-center gap-2 flex-wrap"><input id="dl-cron" class="w-48 bg-gray-950 border border-gray-700 rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-indigo-500" placeholder="min hour dom mon dow">
          <button id="dl-cron-save" class="${btn} bg-indigo-600 hover:bg-indigo-500">Save</button><span id="dl-cron-msg" class="text-xs text-gray-500"></span></div>`)}
-      ${panel('Playlists to sync', `<div id="dl-pl" class="text-xs text-gray-500">Loading…</div>
+      ${fold('playlists', 'Playlists to sync', '<span id="dl-pl-sum"></span>', `<div id="dl-pl" class="text-xs text-gray-500">Loading…</div>
          <div class="flex items-center gap-2 mt-3"><button id="dl-pl-all" class="${btn} bg-gray-700 hover:bg-gray-600">Select all</button>
          <button id="dl-pl-none" class="${btn} bg-gray-700 hover:bg-gray-600">None</button>
          <button id="dl-pl-save" class="${btn} bg-indigo-600 hover:bg-indigo-500">Save selection</button><span id="dl-pl-msg" class="text-xs text-gray-500"></span></div>
          <p class="text-[11px] text-gray-600 mt-2">None selected = all.</p>`)}
-      ${panel('History', '<div id="dl-runs" class="text-xs text-gray-500">Loading…</div>')}`;
-    wireDownloads();
+      ${fold('history', 'History', '<span id="dl-runs-sum"></span>', '<div id="dl-runs" class="text-xs text-gray-500">Loading…</div>')}`;
+    wireDownloads(); wireFolds();
     refreshDlAuth(); refreshDlRun(); loadDlCron(); loadDlPlaylists(); loadDlRuns();
     dlTimer = setInterval(() => { refreshDlRun(); }, 3000);
 }
@@ -931,6 +959,7 @@ async function refreshDlAuth() {
     $('dl-auth').className = 'text-xs ' + (a.authenticated ? 'text-emerald-400' : 'text-yellow-400');
     $('dl-login').classList.toggle('hidden', !!a.authenticated);
     $('dl-logout').classList.toggle('hidden', !a.authenticated);
+    if (!a.authenticated) { const f = document.querySelector('.dl-fold[data-key="account"]'); if (f) f.open = true; }
 }
 
 let dlWasRunning = false;
@@ -944,8 +973,9 @@ async function refreshDlRun() {
     $('dl-run').disabled = running; $('dl-run').classList.toggle('opacity-50', running);
     $('dl-stop').classList.toggle('hidden', !running);
     $('dl-state').textContent = running ? 'Running…' : 'Idle';
+    $('dl-state').className = running ? 'text-emerald-400' : '';
     $('dl-next').textContent = next.delta || next.next_run ? 'Next run: ' + (next.delta || next.next_run) : '';
-    const logs = await fetch('/api/logs').then(r => r.json()).catch(() => []);
+    const logs = isOpen('run') ? await fetch('/api/logs').then(r => r.json()).catch(() => []) : [];
     if (logs.length) {
         const txt = await fetch('/logs/' + encodeURIComponent(logs[0])).then(r => r.text()).catch(() => '');
         const pre = $('dl-log'); const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
@@ -958,6 +988,8 @@ async function refreshDlRun() {
 async function loadDlRuns() {
     const runs = await fetch('/api/runs').then(r => r.json()).catch(() => []);
     if (!$('dl-runs')) return;
+    $('dl-runs-sum').innerHTML = runs.length
+        ? `last ${badge(runs[0].status)} <span class="text-gray-500">${esc((runs[0].timestamp || '').replace('T', ' ').slice(0, 16))} UTC</span>` : '';
     $('dl-runs').innerHTML = runs.length ? runs.slice(0, 15).map(r => `
         <div class="flex items-center gap-3 py-1.5 border-b border-gray-800 last:border-0">${badge(r.status)}
         <span class="text-gray-300">${esc((r.timestamp || '').replace('T', ' ').slice(0, 19))} UTC</span>
@@ -969,6 +1001,7 @@ async function loadDlRuns() {
 async function loadDlCron() {
     const c = await fetch('/api/cron').then(r => r.json()).catch(() => ({}));
     if ($('dl-cron')) $('dl-cron').value = c.expression || '';
+    if ($('dl-cron-sum')) $('dl-cron-sum').textContent = c.expression || '';
 }
 
 let dlSelected = new Set();
@@ -981,6 +1014,7 @@ async function loadDlPlaylists() {
     if (!$('dl-pl')) return;
     if (!Array.isArray(pls)) { box.textContent = pls.error === 401 ? 'Log in to load your playlists.' : 'Could not load playlists.'; return; }
     dlSelected = new Set(sel.ids || []);
+    $('dl-pl-sum').textContent = dlSelected.size ? `${dlSelected.size} of ${pls.length} selected` : `all ${pls.length}`;
     box.innerHTML = pls.length ? pls.map(p => `
         <label class="flex items-center gap-2 py-1 ${p.unsupported ? 'opacity-40' : 'cursor-pointer'}">
         <input type="checkbox" data-pl="${esc(p.id)}" ${p.unsupported ? 'disabled' : ''} ${dlSelected.has(p.id) ? 'checked' : ''}>
