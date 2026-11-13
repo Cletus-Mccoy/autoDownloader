@@ -30,7 +30,8 @@ State lives in JSON files under `/app/data` (there's no database). The data fold
 
 ## Build, test, run
 
-- **Tests:** `make test` runs pytest inside the Docker image. This is the gate, because there is no CI. Some cron and download tests fail on plain Windows Python both with and without changes, so trust the Docker run.
+- **Tests:** CI (`.forgejo/workflows/ci.yml`) runs pytest on the homelab Forgejo runner for every PR and push to `main`, so a PR shows a check and `forge pr merge` works without `--force`. Locally, `make test` runs the same suite inside the Docker image. Some cron and download tests fail on plain Windows Python both with and without changes, so trust CI or the Docker run.
+- **CI holds no credentials:** the runner executes PR code, and its jobs have no Docker daemon. The image is not built in CI.
 - **Local sandbox:** `make dev` serves http://localhost:8081 with data in `./dev`. It never touches the NAS. `make dev-seed` adds sample tracks; `make dev-down` stops it.
 - **Publish:** `wsl make push` runs the tests, builds with `--no-cache`, then pushes `cletusmccoy/auto-downloader:latest` to Docker Hub. Docker Hub login is set up in WSL Ubuntu.
 - **Docker from Windows:** run docker and make through `wsl`.
