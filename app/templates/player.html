@@ -408,8 +408,31 @@ const SORT_PAGES = { queue: ['/sort', 'New likes'], misfiled: ['/sort/misfiled',
 let sortCounts = { queue: 0, misfiled: 0, dupes: 0 };
 
 function renderSort() {
-    $('content').innerHTML = `<iframe title="${esc(filter.title)}" src="${esc(filter.path)}?embed=1" class="w-full rounded-xl bg-gray-950 border border-gray-800" style="height:calc(100vh - 9.5rem)"></iframe>`;
+    // Fill #content exactly: a 100vh-based height ran under the player bar and
+    // hid the sorter page's own "Now playing" bar behind it.
+    $('content').innerHTML = `<iframe title="${esc(filter.title)}" src="${esc(filter.path)}?embed=1" class="block w-full h-full rounded-xl bg-gray-950 border border-gray-800"></iframe>`;
+    const frame = $('content').querySelector('iframe');
+    frame.addEventListener('load', () => linkFrameAudio(frame));
 }
+
+// One sound at a time. The sorter pages are same-origin iframes with their own
+// <audio> elements (snippet, playlist preview, stats player): whichever starts,
+// the main player and every other one pause. 'play' doesn't bubble, so listen
+// in the capture phase.
+function frameAudios() {
+    return [...document.querySelectorAll('#content iframe')].flatMap(f => {
+        try { return [...f.contentDocument.querySelectorAll('audio, video')]; } catch { return []; }
+    });
+}
+function linkFrameAudio(frame) {
+    let doc; try { doc = frame.contentDocument; } catch { return; }
+    if (!doc) return;
+    doc.addEventListener('play', e => {
+        if (!audio.paused) audio.pause();
+        frameAudios().forEach(a => { if (a !== e.target && !a.paused) a.pause(); });
+    }, true);
+}
+audio.addEventListener('play', () => frameAudios().forEach(a => { if (!a.paused) a.pause(); }));
 
 async function refreshSortCounts() {
     const j = u => fetch(u).then(r => r.json()).catch(() => null);
@@ -631,10 +654,12 @@ function playAt(i, autoplay = true) {
     updateNowPlaying(); persist();
 }
 
-function nextIndex(dir) {
+// auto: the track ended by itself. Repeat-one only holds then; Next pressed by
+// hand (button, N, media key) always moves on, or it just restarted the track.
+function nextIndex(dir, auto = false) {
     if (!queue.length) return -1;
     if (dir > 0) {
-        if (repeat === 'one') return qIdx;
+        if (repeat === 'one' && auto) return qIdx;
         if (shuffle && queue.length > 1) { let n; do { n = Math.floor(Math.random() * queue.length); } while (n === qIdx); return n; }
         if (qIdx + 1 < queue.length) return qIdx + 1;
         return repeat === 'all' ? 0 : -1;
@@ -644,8 +669,8 @@ function nextIndex(dir) {
     return qIdx > 0 ? qIdx - 1 : (repeat === 'all' ? queue.length - 1 : qIdx);
 }
 
-function step(dir) {
-    const n = nextIndex(dir);
+function step(dir, auto = false) {
+    const n = nextIndex(dir, auto);
     if (n < 0) { audio.pause(); return; }
     if (dir > 0 && shuffle && qIdx >= 0) history.push(qIdx);
     if (n === qIdx) { audio.currentTime = 0; audio.play().catch(() => {}); } else playAt(n);
@@ -761,7 +786,7 @@ $('queue-close').addEventListener('click', () => { $('queue-panel').classList.ad
 
 audio.addEventListener('play',  () => { $('play-btn').innerHTML = ICON.pause; $('play-btn').setAttribute('aria-label', 'Pause'); if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; });
 audio.addEventListener('pause', () => { $('play-btn').innerHTML = ICON.play; $('play-btn').setAttribute('aria-label', 'Play'); if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; });
-audio.addEventListener('ended', () => step(1));
+audio.addEventListener('ended', () => step(1, true));
 audio.addEventListener('error', () => { if (queue[qIdx]) setTimeout(() => step(1), 500); });   // skip unplayable files
 let seeking = false, lastSave = 0;
 audio.addEventListener('timeupdate', () => {
