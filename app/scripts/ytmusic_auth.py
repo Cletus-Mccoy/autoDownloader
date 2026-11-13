@@ -107,6 +107,16 @@ def load_headers(headers_path=None, jar_path=None) -> dict:
     jar_path = jar_path or COOKIES_FILE
     with open(headers_path, encoding="utf-8") as f:
         headers = json.load(f)
+    # Pastes saved before the CRLF fix carry a '\r' on every value, and
+    # requests refuses to send such a header at all. Repair in place, keeping
+    # the file's mtime: it orders the paste against yt-dlp's jar.
+    clean = {k.strip(): v.strip() if isinstance(v, str) else v
+             for k, v in headers.items()}
+    if clean != headers:
+        mtime = os.path.getmtime(headers_path)
+        _write_headers(clean, headers_path)
+        os.utime(headers_path, (mtime, mtime))
+        headers = clean
     key = _cookie_key(headers)
     if key and jar_is_newer(headers_path, jar_path):
         jar = read_cookie_jar(jar_path)

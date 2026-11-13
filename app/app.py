@@ -330,7 +330,10 @@ def auth_status():
         return jsonify({"authenticated": False, "reason": "expired", "method": method})
 
 
-_HEADER_NAME_RE = re.compile(r"^:?[a-z][a-z0-9\-]*$")
+# Case-insensitive: Chrome copies names in lowercase ("cookie"), Firefox's
+# non-raw copy keeps their capitals ("Cookie", "X-Goog-AuthUser") with each
+# value on the next line, indented by a tab.
+_HEADER_NAME_RE = re.compile(r"^:?[a-z][a-z0-9\-]*$", re.IGNORECASE)
 
 
 def _normalize_headers_raw(raw: str) -> str:
@@ -345,12 +348,16 @@ def _normalize_headers_raw(raw: str) -> str:
     (lowercase letters/digits/hyphens only) and skip any lines that don't match,
     so the Decoded block is transparently ignored.
 
-    If the input already contains ': ' separators it is returned unchanged.
+    Input that already has ': ' separators (Firefox's Raw view) is kept as is,
+    line for line, but trimmed: a browser submits a textarea with CRLF line
+    endings, ytmusicapi splits on '\\n' only, and the '\\r' left on every value
+    made requests refuse to send anything ("Invalid ... return character(s) in
+    header value"), which the auth check reported as expired credentials.
     HTTP/2 pseudo-headers (:authority, :method, …) are dropped.
     """
     lines = [l for l in raw.splitlines() if l.strip()]
     if any(": " in line for line in lines):
-        return raw
+        return "\n".join(l.strip() for l in lines)
     result = []
     i = 0
     while i < len(lines):
