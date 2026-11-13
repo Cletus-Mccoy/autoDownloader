@@ -82,6 +82,9 @@ if (new URLSearchParams(location.search).has('embed')) {
     document.addEventListener('keydown', e => { if (e.key === 'Escape') parent.postMessage('tool-modal-close', '*'); });
 }
 let tracks = [], playlists = [], index = 0, decided = 0, total = 0;
+// Opening the page never starts playback; autoplay applies from the first
+// decision or step onwards.
+let started = false;
 
 async function load() {
     const data = await (await fetch('/api/sort/remodel')).json();
@@ -180,10 +183,10 @@ function show() {
              href="https://music.youtube.com/watch?v=${t.videoId}" target="_blank">open in YT Music</a>`;
         player.classList.add('hidden');
     };
-    if (document.getElementById('autoplay').checked) player.play().catch(() => {});
+    if (started && document.getElementById('autoplay').checked) player.play().catch(() => {});
 }
 
-function move(step) { index += step; show(); }
+function move(step) { index += step; started = true; show(); }
 
 function setMsg(text, cls) {
     const msg = document.getElementById('msg');
@@ -212,7 +215,7 @@ async function keep() {
     if (data.ok) consume(); else setMsg(data.error || 'Failed', 'text-red-400');
 }
 
-function consume() { tracks.splice(index, 1); decided++; show(); }
+function consume() { tracks.splice(index, 1); decided++; started = true; show(); }
 
 document.addEventListener('keydown', e => {
     if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;

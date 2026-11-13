@@ -9,12 +9,6 @@ def test_index_is_player(client):
     assert b"Music Player" in resp.data
 
 
-def test_downloads_dashboard_returns_html(client):
-    resp = client.get("/downloads")
-    assert resp.status_code == 200
-    assert b"YT Music" in resp.data
-
-
 # ── Auth ─────────────────────────────────────────────────────────────────────
 
 def test_auth_status_unauthenticated(client):
@@ -215,23 +209,15 @@ def test_download_status_returns_known_state(client):
 
 # ── Downloads ────────────────────────────────────────────────────────────────
 
-def test_api_downloads_empty(client):
-    resp = client.get("/api/downloads")
-    assert resp.status_code == 200
-    data = resp.get_json()
-    assert "files" in data
-    assert isinstance(data["files"], list)
-
-
-def test_api_downloads_metadata_pagination(client):
-    resp = client.get("/api/downloads/metadata?page=1&limit=10")
-    assert resp.status_code == 200
-    data = resp.get_json()
-    assert "files" in data
-    assert "total" in data
-    assert "page" in data
-    assert "pages" in data
-    assert data["page"] == 1
+def test_old_dashboard_and_its_endpoints_are_gone(client):
+    # Archived: the player's Downloads view replaces it. The old URL lands on
+    # the player; the file browser and the clear-everything buttons are gone.
+    resp = client.get("/downloads")
+    assert resp.status_code == 302 and resp.headers["Location"].endswith("/")
+    for path in ("/api/downloads", "/api/downloads/metadata"):
+        assert client.get(path).status_code == 404
+    for path in ("/clear-runs", "/clear-logs", "/clear-downloads"):
+        assert client.post(path).status_code in (404, 405)
 
 
 # ── Playlists ────────────────────────────────────────────────────────────────
@@ -517,12 +503,11 @@ def test_sort_stats_never_emits_nan(client, flask_app):
     assert d["nested"][0]["precision"] is None
 
 
-def test_index_hosts_sorter_tools_in_a_modal(client):
-    html = client.get("/downloads").get_data(as_text=True)
+def test_player_hosts_the_sorter_pages(client):
+    html = client.get("/").get_data(as_text=True)
     for path, label in (("/sort", "New likes"), ("/sort/misfiled", "Misfiled"),
-                        ("/sort/duplicates", "Duplicates"), ("/sort/stats", "Stats")):
-        assert f"openToolModal('{path}'" in html and label in html
-    assert 'id="tool-frame"' in html and 'id="sort-queue-count"' in html
+                        ("/sort/duplicates", "Duplicates"), ("/sort/stats", "Sorter")):
+        assert f'data-path="{path}"' in html and label in html
 
 
 def test_tool_pages_support_embed_mode(client):

@@ -8,9 +8,6 @@ import sys
 import datetime
 import re
 from croniter import croniter
-from mutagen.mp3 import MP3
-from mutagen.id3 import ID3
-from mutagen._file import File as MutagenFile
 # The vibe modules import their siblings as top-level modules (library.py
 # does `from ytmusic_auth import ...`), which is how the CLI entry points run
 # them. The web app must offer the same import path, or the first endpoint to
@@ -71,10 +68,10 @@ UNSUPPORTED_TITLES = {"Liked Music", "Episodes for Later"}
 
 
 def _done(**payload):
-    """JSON for the player UI (fetch sends X-Requested-With), redirect for the legacy dashboard forms."""
+    """JSON for the player UI (fetch sends X-Requested-With), redirect home for a plain form post."""
     if request.headers.get("X-Requested-With") == "fetch":
         return jsonify({"ok": True, **payload})
-    return redirect("/downloads")
+    return redirect("/")
 
 
 def get_library():
@@ -134,21 +131,10 @@ def player():
 
 
 @app.route("/downloads")
-def index():
-    runs = load_runs()
-    next_run, delta = get_next_run_safe()
-
-    for run in runs:
-        run["log_name"] = os.path.basename(run["log"])
-
-    return render_template(
-        "index.html",
-        runs=runs[:10],
-        next_run=next_run,
-        delta=delta,
-        downloads=get_files(),
-        download_size=get_download_size()
-    )
+def legacy_dashboard():
+    """The old dashboard is archived (archive/old_dashboard.html); its
+    controls live in the player's Downloads view."""
+    return redirect("/")
 
 
 def _is_music(filename):
@@ -293,24 +279,6 @@ def download_status():
     return jsonify({"status": "idle"})
     
  
-@app.route("/clear-runs", methods=["POST"])
-def clear_runs():
-    with open(RUNS_FILE, "w") as f:
-        json.dump([], f)
-    return redirect("/downloads")
-
-@app.route("/clear-logs", methods=["POST"])
-def clear_logs():
-    for f in os.listdir(LOG_DIR):
-        os.remove(os.path.join(LOG_DIR, f))
-    return redirect("/downloads")
-
-@app.route("/clear-downloads", methods=["POST"])
-def clear_downloads():
-    shutil.rmtree(DOWNLOAD_DIR, ignore_errors=True)
-    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-    return redirect("/downloads")
-
 @app.route("/auth/status")
 def auth_status():
     from scripts.ytmusic_auth import has_oauth, has_headers, headers_to_ytmusic
@@ -576,78 +544,6 @@ def api_logs():
         reverse=True
     )
     return jsonify(files)
-
-
-@app.route("/api/downloads")
-def api_downloads():
-    return jsonify({"files": get_files(), "size": get_download_size()})
-
-
-@app.route("/api/downloads/metadata")
-def downloads_metadata():
-    page  = max(1, int(request.args.get("page",  1)))
-    limit = max(1, min(int(request.args.get("limit", 20)), 100))
-
-    all_files = []
-    for root, _, files in os.walk(DOWNLOAD_DIR):
-        for fname in files:
-            if _is_music(fname):
-                fpath = os.path.join(root, fname)
-                rel   = fpath[len(DOWNLOAD_DIR):].lstrip("/")
-                all_files.append((rel, fpath))
-    all_files.sort(key=lambda x: x[0])
-
-    total      = len(all_files)
-    start      = (page - 1) * limit
-    page_files = all_files[start:start + limit]
-
-    result = []
-    for rel, fpath in page_files:
-        info = {"path": rel}
-        try:
-            audio = MutagenFile(fpath, easy=True)
-            if audio is not None:
-                info["title"]    = audio.get("title",  [""])[0]
-                info["artist"]   = audio.get("artist", [""])[0]
-                info["album"]    = audio.get("album",  [""])[0]
-                info["duration"] = int(audio.info.length)
-            # cover art: ID3-tagged files only (MP3/AIFF)
-            try:
-                tags = ID3(fpath)
-                info["has_art"] = any(k.startswith("APIC") for k in tags)
-            except Exception:
-                info["has_art"] = False
-        except Exception:
-            pass
-        try:
-            info["size"] = os.path.getsize(fpath)
-        except OSError:
-            info["size"] = 0
-        result.append(info)
-
-    return jsonify({
-        "files": result,
-        "total": total,
-        "page":  page,
-        "pages": max(1, (total + limit - 1) // limit),
-        "limit": limit,
-    })
-
-
-@app.route("/api/downloads/art/<path:filename>")
-def download_art(filename):
-    fpath = os.path.join(DOWNLOAD_DIR, filename)
-    if not os.path.exists(fpath):
-        return "", 404
-    try:
-        tags = ID3(fpath)
-        for key in tags:
-            if key.startswith("APIC"):
-                apic = tags[key]
-                return Response(apic.data, mimetype=apic.mime)
-    except Exception:
-        pass
-    return "", 404
 
 
 def _cron_line(expression):

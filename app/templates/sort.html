@@ -80,6 +80,9 @@ if (new URLSearchParams(location.search).has('embed')) {
     document.addEventListener('keydown', e => { if (e.key === 'Escape') parent.postMessage('tool-modal-close', '*'); });
 }
 let tracks = [], playlists = [], index = 0, decided = 0, total = 0;
+// Opening the page never starts playback; autoplay applies from the first
+// decision or step onwards.
+let started = false;
 
 async function load() {
     const data = await (await fetch('/api/sort/queue')).json();
@@ -180,13 +183,13 @@ function show() {
              href="https://music.youtube.com/watch?v=${t.videoId}" target="_blank">open in YT Music</a>`;
         player.classList.add('hidden');
     };
-    if (document.getElementById('autoplay').checked) {
+    if (started && document.getElementById('autoplay').checked) {
         player.play().catch(() => {});  // browsers block autoplay until first interaction
     }
 }
 
 function move(step) {
-    index += step;
+    index += step; started = true;
     show();
 }
 
@@ -220,7 +223,7 @@ async function skip() {
 
 function consume() {
     tracks.splice(index, 1);
-    decided++;
+    decided++; started = true;
     show();   // index already points at the next track
 }
 
