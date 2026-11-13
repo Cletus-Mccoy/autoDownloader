@@ -1042,7 +1042,7 @@ def sort_typical():
     than that.
     """
     meta = _read_json(f"{VIBE_DIR}/thresholds.json", {})
-    backend = meta.get("backend") or "effnet"
+    backend = meta.get("vectors_backend") or meta.get("backend") or "effnet"
     npz = os.path.join(VIBE_DIR, "embeddings", f"{backend}.npz")
     if not os.path.exists(npz) or not os.path.exists(VIBE_LIBRARY_FILE):
         return jsonify({"backend": backend, "playlists": {}})
@@ -1141,7 +1141,7 @@ def sort_skip():
 def _overlap_inputs():
     """(library, vectors, exclude, cache key), or None before anything is embedded."""
     meta = _read_json(f"{VIBE_DIR}/thresholds.json", {})
-    backend = meta.get("backend") or "effnet"
+    backend = meta.get("vectors_backend") or meta.get("backend") or "effnet"
     npz = os.path.join(VIBE_DIR, "embeddings", f"{backend}.npz")
     if not os.path.exists(npz) or not os.path.exists(VIBE_LIBRARY_FILE):
         return None

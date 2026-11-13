@@ -59,6 +59,15 @@ def load_cached(backend, exclude, min_tracks=None):
     return X, y, stats, sizes
 
 
+def load_cached_rows(backend, exclude, min_tracks=None):
+    """The track rows behind load_cached's X, in the same order."""
+    from .embed import cached_ids
+    lib = library.load_library(refresh=False)
+    rows, _ = library.labelled_tracks(lib, min_tracks=min_tracks, exclude=exclude)
+    have = cached_ids(backend)
+    return [r for r in rows if r["videoId"] in have]
+
+
 def load_combined(backends, exclude, min_tracks=None):
     """Concatenate several embedding caches, keeping only tracks in all of them.
 

@@ -59,7 +59,10 @@ State lives in JSON files under `/app/data` (there's no database). The data fold
 
 ## Vibe sorter
 
-- **Model:** discogs-effnet embeddings (CPU, essentia-tensorflow) and a classifier per playlist. It runs on 60 s preview snippets, capped at `VIBE_MAX_NEW_AUDIO` new snippets per night.
+- **Model:** discogs-effnet embeddings (CPU, essentia-tensorflow) and a classifier per playlist. Two models compete in every nightly training run:
+  - **One-vector model:** one effnet vector per track from a 60 s middle snippet (capped at `VIBE_MAX_NEW_AUDIO` new snippets per night). The Stats, overlap and typical-track views always use this cache (`vectors_backend` in `thresholds.json`), and the review pages play the snippets.
+  - **Piece model** (`effnet-loud9`, `vibe/pieces.py` and `model.PieceModel`): the 9 loudest 10 s pieces of the whole track, a classifier on every piece, combined by geometric mean, times an artist vote. Audio comes from the downloaded MP3s; only tracks not downloaded yet are fetched whole and deleted after embedding. The backlog fills at `VIBE_PIECES_MAX_NEW` tracks per night.
+  - **The choice:** the piece model is only tried once 95% of training tracks have piece vectors, and it routes only when the nested evaluation shows it places more tracks unattended without falling under the precision bar. `thresholds.json` records both candidates and which one won.
 - **Goal:** the owner has 25+ playlists, and each track goes into exactly one. Optimise **precision on the tracks the sorter files automatically**, not overall accuracy. Tracks it isn't confident about stay in Liked.
 - **Gate:** a playlist is only routed automatically when its nested-CV precision is near 90%.
 - **Playlist names:** they carry numbered genre prefixes such as `28. UNSORTED TECH`. **Never infer a playlist's role from its name.** UNSORTED TECH is a real vibe, not a holding bin.

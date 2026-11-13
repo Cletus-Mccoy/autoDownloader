@@ -32,8 +32,10 @@ import numpy as np
 
 from ytmusic_auth import headers_to_ytmusic
 
-from . import audio, config, embed, library
+from . import audio, config, embed, library, model
 from .removals import dedupe_blocks
+
+PIECES_BACKEND = "effnet-loud9"   # pieces.BACKEND, without importing essentia here
 
 QUEUE_FILE = "sort_queue.json"
 DECISIONS_FILE = "decisions.jsonl"
@@ -84,10 +86,13 @@ def decide(vectors, tracks, bundle, thresholds, shortlist, blocked=frozenset()):
     ids = [t["videoId"] for t in tracks if t["videoId"] in vectors]
     if not ids:
         return [], []
-    X = np.vstack([vectors[v] for v in ids])
+    by_id = {t["videoId"]: t for t in tracks}
+    if bundle.get("backend") == PIECES_BACKEND:
+        X = model.track_inputs(vectors, [by_id[v] for v in ids])
+    else:
+        X = np.vstack([vectors[v] for v in ids])
     proba = bundle["pipeline"].predict_proba(X)
     classes = np.array(bundle["classes"])
-    by_id = {t["videoId"]: t for t in tracks}
 
     placements, queued = [], []
     for i, video_id in enumerate(ids):
@@ -208,7 +213,11 @@ def main():
     # track re-downloaded snippets the embedder would never open — with a
     # nightly cap of 50 that was weeks of downloads before anything new got
     # scored — and made the audio cache a hard dependency it isn't.
-    embedded = embed.cached_ids(bundle["backend"])
+    # The snippet and its one-vector embedding are always made: the review
+    # pages play the snippet, and the stats views read the one-vector cache,
+    # whichever model routes.
+    snippet_backend = bundle.get("vectors_backend") or bundle["backend"]
+    embedded = embed.cached_ids(snippet_backend)
     need_audio = [t for t in pending if t["videoId"] not in embedded]
     print(f"{len(pending) - len(need_audio)} already embedded, "
           f"{len(need_audio)} need audio")
@@ -216,8 +225,12 @@ def main():
     if need_audio:
         paths.update(audio.fetch_many(need_audio, workers=args.workers,
                                       max_new=args.max_new_audio))
-    vectors = embed.embed_tracks(paths, backend=bundle["backend"],
+    vectors = embed.embed_tracks(paths, backend=snippet_backend,
                                  prune_audio=args.prune_audio)
+    if bundle["backend"] == PIECES_BACKEND:
+        from . import pieces
+        cap = int(args.max_new_audio) if args.max_new_audio is not None else None
+        vectors = pieces.ensure(pending, max_new=cap)
     placements, queued = decide(vectors, pending, bundle, thresholds,
                                 args.shortlist, blocked)
 

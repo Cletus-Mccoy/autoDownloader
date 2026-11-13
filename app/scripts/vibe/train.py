@@ -34,7 +34,7 @@ def _nan_to_none(obj):
     return obj
 
 
-def nested_evaluation(X, y, target_precision, outer_folds=5):
+def nested_evaluation(X, y, target_precision, outer_folds=5, build=None):
     """Honest precision: thresholds chosen on data they are never scored on.
 
     The simple estimate picks each playlist's threshold on the same
@@ -53,14 +53,15 @@ def nested_evaluation(X, y, target_precision, outer_folds=5):
     """
     from sklearn.model_selection import StratifiedKFold
 
+    build = build or model.build
     cv = StratifiedKFold(n_splits=outer_folds, shuffle=True,
                          random_state=config.RANDOM_SEED)
     stats = {label: {"accepted": 0, "correct": 0, "support": 0, "folds": 0}
              for label in np.unique(y)}
 
-    for train_idx, test_idx in cv.split(X, y):
+    for train_idx, test_idx in cv.split(np.zeros(len(y)), y):
         X_tr, y_tr = X[train_idx], y[train_idx]
-        inner_proba, inner_classes = model.out_of_fold_proba(X_tr, y_tr)
+        inner_proba, inner_classes = model.out_of_fold_proba(X_tr, y_tr, build=build)
         chosen = {r["playlist"]: r["threshold"]
                   for r in probe.per_class_thresholds(
                       inner_proba, inner_classes, y_tr, target_precision)
@@ -68,7 +69,7 @@ def nested_evaluation(X, y, target_precision, outer_folds=5):
         for label in chosen:
             stats[label]["folds"] += 1
 
-        fitted = model.build().fit(X_tr, y_tr)
+        fitted = build().fit(X_tr, y_tr)
         proba = fitted.predict_proba(X[test_idx])
         classes = np.array(fitted.classes_)
         y_test = y[test_idx]
@@ -136,23 +137,13 @@ def ensure_embeddings(lib, backend, exclude, min_tracks=None, workers=3,
     return still_missing
 
 
-def train(backend, exclude, target_precision, min_tracks=None, refresh=False,
-          nested=False, min_folds=4, tolerance=0.05, workers=3, max_new=None,
-          prune_audio=False):
-    # Re-read playlists first: every track you placed from the review queue
-    # is a new label, and picking it up is the whole feedback loop.
-    lib = library.load_library(refresh=refresh)
-    ensure_embeddings(lib, backend, exclude, min_tracks, workers=workers,
-                      max_new=max_new, prune_audio=prune_audio)
-    X, y, stats, sizes = sweep.load_cached(backend, exclude, min_tracks)
-    X, y, _, thin = probe.drop_thin_classes(X, y, list(range(len(y))))
-    if thin:
-        print("Too few usable tracks to learn: "
-              + ", ".join(f"{l} ({c})" for l, c in thin))
-
-    print(f"Training on {len(y)} tracks across {len(np.unique(y))} playlists")
-
-    proba, classes = model.out_of_fold_proba(X, y)
+def evaluate(X, y, sizes, target_precision, nested=False, min_folds=4,
+             tolerance=0.05, build=None):
+    """Score one candidate model the way it would be used: thresholds per
+    playlist, the nested gate, and the share of tracks it would place.
+    Returns a dict with everything train() writes, plus the fitted model."""
+    build = build or model.build
+    proba, classes = model.out_of_fold_proba(X, y, build=build)
     predicted = classes[np.argmax(proba, axis=1)]
     top1 = float((predicted == y).mean())
     top3 = probe.top_k_accuracy(proba, classes, y, min(3, len(classes)))
@@ -168,7 +159,7 @@ def train(backend, exclude, target_precision, min_tracks=None, refresh=False,
     if nested:
         print("Nested evaluation (thresholds chosen on data they aren't "
               "scored on)...")
-        nested_rows = nested_evaluation(X, y, target_precision)
+        nested_rows = nested_evaluation(X, y, target_precision, build=build)
 
         # Gate on the honest numbers. A playlist that qualifies on full data
         # but fails when measured on data its threshold never saw was fitting
@@ -203,7 +194,7 @@ def train(backend, exclude, target_precision, min_tracks=None, refresh=False,
             for playlist in revoked:
                 print(f"  {playlist} — {thresholds[playlist]['revoked']}")
 
-    fitted = model.build().fit(X, y)
+    fitted = build().fit(X, y)
 
     # Read back from `thresholds`, not `rows` — the nested gate may have
     # revoked some, and reporting the pre-gate count would overstate what the
@@ -212,25 +203,27 @@ def train(backend, exclude, target_precision, min_tracks=None, refresh=False,
                 if thresholds[r["playlist"]]["threshold"] is not None]
     auto = sum(sizes.get(r["playlist"], 0) * r["recall"] for r in routable)
     total = sum(sizes.get(r["playlist"], 0) for r in rows)
+    auto_share = auto / total if total else 0.0
 
     print(f"top-1 {top1:.1%}, top-3 {top3:.1%}")
     print(f"{len(routable)}/{len(classes)} playlists can place unattended "
           f"at >= {target_precision:.0%} precision")
-    print(f"expected ~{auto / total:.0%} of tracks placed automatically, "
+    print(f"expected ~{auto_share:.0%} of tracks placed automatically, "
           "the rest queued for review")
 
+    honest = None
     if nested_rows:
         stable = [r for r in nested_rows if r["folds_qualifying"] == r["outer_folds"]]
         scored = [r for r in nested_rows if r["precision"] is not None]
         pooled_accepted = sum(r["accepted"] for r in scored)
         pooled_correct = sum(r["precision"] * r["accepted"] for r in scored)
+        honest = pooled_correct / pooled_accepted if pooled_accepted else None
         print("\nHonest (nested) estimate:")
         print(f"  {len(stable)} playlist(s) qualify in all "
               f"{nested_rows[0]['outer_folds']} folds — the rest are unstable")
         if pooled_accepted:
             print(f"  measured precision on held-out data: "
-                  f"{pooled_correct / pooled_accepted:.1%} "
-                  f"(target was {target_precision:.0%})")
+                  f"{honest:.1%} (target was {target_precision:.0%})")
         print(f"  {'playlist':<38} {'folds':>5} {'prec':>6} {'recall':>7}")
         for r in nested_rows:
             if not r["folds_qualifying"]:
@@ -240,12 +233,89 @@ def train(backend, exclude, target_precision, min_tracks=None, refresh=False,
                   f"{r['folds_qualifying']}/{r['outer_folds']:<3} "
                   f"{prec:>6} {r['recall']:>6.0%}")
 
-    return fitted, classes, thresholds, nested_rows, {
-        "backend": backend,
+    return {"fitted": fitted, "classes": classes, "thresholds": thresholds,
+            "nested": nested_rows, "top1": top1, "top3": top3,
+            "routable": len(routable), "auto_share": auto_share,
+            "honest_precision": honest, "n_train": int(len(y))}
+
+
+# The piece model takes over only once nearly every training track has piece
+# vectors (the backlog drains over several nights), and only when it would
+# place more tracks unattended without losing precision.
+PIECES_ENABLED = os.getenv("VIBE_PIECES", "true").lower() == "true"
+PIECES_MIN_COVERAGE = float(os.getenv("VIBE_PIECES_MIN_COVERAGE", "0.95"))
+PIECES_MAX_NEW = int(os.getenv("VIBE_PIECES_MAX_NEW", "400"))
+
+
+def better(candidate, current, target_precision, tolerance):
+    """Whether the piece model should replace the one-vector model."""
+    if candidate["auto_share"] <= current["auto_share"]:
+        return False
+    honest = candidate["honest_precision"]
+    if current["honest_precision"] is not None:   # nested ran: hold the bar
+        if honest is None or honest < target_precision - tolerance:
+            return False
+    return True
+
+
+def _summary(result):
+    return {k: result[k] for k in ("top1", "top3", "routable", "auto_share",
+                                   "honest_precision", "n_train")}
+
+
+def train(backend, exclude, target_precision, min_tracks=None, refresh=False,
+          nested=False, min_folds=4, tolerance=0.05, workers=3, max_new=None,
+          prune_audio=False, pieces_enabled=None, pieces_max_new=None):
+    # Re-read playlists first: every track you placed from the review queue
+    # is a new label, and picking it up is the whole feedback loop.
+    lib = library.load_library(refresh=refresh)
+    ensure_embeddings(lib, backend, exclude, min_tracks, workers=workers,
+                      max_new=max_new, prune_audio=prune_audio)
+    X, y, stats, sizes = sweep.load_cached(backend, exclude, min_tracks)
+    keep_rows = sweep.load_cached_rows(backend, exclude, min_tracks)
+    X, y, kept, thin = probe.drop_thin_classes(X, y, list(range(len(y))))
+    keep_rows = [keep_rows[i] for i in kept]
+    if thin:
+        print("Too few usable tracks to learn: "
+              + ", ".join(f"{l} ({c})" for l, c in thin))
+
+    print(f"Training on {len(y)} tracks across {len(np.unique(y))} playlists")
+    current = evaluate(X, y, sizes, target_precision, nested, min_folds, tolerance)
+    chosen, chosen_backend = current, backend
+    candidates = {backend: _summary(current)}
+
+    pieces_enabled = PIECES_ENABLED if pieces_enabled is None else pieces_enabled
+    if pieces_enabled:
+        from . import pieces
+        cap = PIECES_MAX_NEW if pieces_max_new is None else pieces_max_new
+        vectors = pieces.ensure(keep_rows, max_new=cap)
+        have = [i for i, r in enumerate(keep_rows) if r["videoId"] in vectors]
+        coverage = len(have) / len(keep_rows) if keep_rows else 0.0
+        print(f"\nPiece vectors for {len(have)} of {len(keep_rows)} training "
+              f"tracks ({coverage:.0%}; the piece model is tried from "
+              f"{PIECES_MIN_COVERAGE:.0%})")
+        if coverage >= PIECES_MIN_COVERAGE:
+            print(f"Evaluating the piece model ({pieces.BACKEND}, plus artist vote)")
+            Xp = model.track_inputs(vectors, [keep_rows[i] for i in have])
+            candidate = evaluate(Xp, y[have], sizes, target_precision, nested,
+                                 min_folds, tolerance, build=model.piece_build)
+            candidates[pieces.BACKEND] = _summary(candidate)
+            if better(candidate, current, target_precision, tolerance):
+                chosen, chosen_backend = candidate, pieces.BACKEND
+            print(f"\nUsing {chosen_backend}: places ~{chosen['auto_share']:.0%} "
+                  f"unattended (one-vector model ~{current['auto_share']:.0%}, "
+                  f"piece model ~{candidate['auto_share']:.0%})")
+
+    return chosen["fitted"], chosen["classes"], chosen["thresholds"], chosen["nested"], {
+        "backend": chosen_backend,
+        # The one-vector cache stays the source for the stats, overlap and
+        # typical-track views, whichever model routes.
+        "vectors_backend": backend,
+        "candidates": candidates,
         "trained_at": datetime.datetime.utcnow().isoformat(),
-        "n_train": int(len(y)),
-        "top1": top1,
-        "top3": top3,
+        "n_train": chosen["n_train"],
+        "top1": chosen["top1"],
+        "top3": chosen["top3"],
         "target_precision": target_precision,
         "exclude": list(exclude or []),
     }
@@ -282,6 +352,13 @@ def main():
                              "for the next one")
     parser.add_argument("--prune-audio", action="store_true",
                         help="delete each snippet once its vector is cached")
+    parser.add_argument("--no-pieces", action="store_false", dest="pieces",
+                        default=None,
+                        help="skip the piece model (9 loudest pieces of the "
+                             "whole track, plus the artist vote)")
+    parser.add_argument("--pieces-max-new", type=int, default=None, metavar="N",
+                        help="cap tracks given piece vectors this run "
+                             f"(default {PIECES_MAX_NEW}, env VIBE_PIECES_MAX_NEW)")
     args = parser.parse_args()
 
     config.ensure_dirs()
@@ -291,7 +368,8 @@ def main():
             refresh=args.refresh_library, nested=args.nested,
             min_folds=args.min_folds, tolerance=args.precision_tolerance,
             workers=args.workers, max_new=args.max_new_audio,
-            prune_audio=args.prune_audio)
+            prune_audio=args.prune_audio, pieces_enabled=args.pieces,
+            pieces_max_new=args.pieces_max_new)
     except library.AuthError as e:
         raise SystemExit(f"\n{e}")
     if nested_rows:
